@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,6 +14,7 @@ type segment struct {
 	mu     sync.RWMutex
 	cond   *sync.Cond
 	chunks [][]byte
+	views  uintptr
 	// fixed at creation
 	start time.Duration
 	name  string
@@ -78,6 +80,7 @@ func (s *segment) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Cache-Control", "max-age=600, public")
 	rw.Header().Set("Content-Type", "video/MP2T")
 	flusher, _ := rw.(http.Flusher)
+	atomic.AddUintptr(&s.views, 1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.final {

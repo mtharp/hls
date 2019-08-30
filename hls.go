@@ -23,6 +23,7 @@ type Publisher struct {
 	seq      int64
 	dcn      bool
 	state    atomic.Value
+	viewers  uintptr
 
 	current *segment
 	muxBuf  bytes.Buffer
@@ -59,6 +60,7 @@ func (p *Publisher) WriteTrailer() error {
 // WritePacket publishes a single packet
 func (p *Publisher) WritePacket(pkt av.Packet) error {
 	if pkt.IsKeyFrame {
+		p.updateViewers()
 		p.newSegment(pkt.Time)
 	}
 	if p.current == nil {
@@ -140,6 +142,26 @@ func (p *Publisher) trimSegments() {
 			break
 		}
 	}
+}
+
+// calculate view count from the most recent couple of segments
+func (p *Publisher) updateViewers() {
+	var viewers uintptr
+	for _, seg := range p.segments {
+		v := atomic.LoadUintptr(&seg.views)
+		if v > viewers {
+			viewers = v
+		}
+	}
+	atomic.StoreUintptr(&p.viewers, viewers)
+}
+
+// Viewers returns the approximate number of unique viewers of the stream
+func (p *Publisher) Viewers() int {
+	if p == nil {
+		return 0
+	}
+	return int(atomic.LoadUintptr(&p.viewers))
 }
 
 // serve the HLS playlist and segments
