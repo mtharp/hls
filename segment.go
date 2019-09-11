@@ -2,7 +2,10 @@ package hls
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -11,8 +14,8 @@ import (
 
 type segment struct {
 	// live
-	mu     sync.RWMutex
-	cond   *sync.Cond
+	mu     sync.Mutex
+	cond   sync.Cond
 	chunks [][]byte
 	views  uintptr
 	// fixed at creation
@@ -20,13 +23,14 @@ type segment struct {
 	name  string
 	dcn   bool
 	// finalized
+	f     *os.File
 	final bool
 	size  int64
 	dur   time.Duration
 }
 
 // create a new live segment
-func newSegment(start, initialDur time.Duration, header []byte, dcn bool) *segment {
+func newSegment(start, initialDur time.Duration, header []byte, dcn bool, workDir string) (*segment, error) {
 	s := &segment{
 		name:   strconv.FormatInt(time.Now().UnixNano(), 36) + ".ts",
 		start:  start,
@@ -34,8 +38,18 @@ func newSegment(start, initialDur time.Duration, header []byte, dcn bool) *segme
 		dcn:    dcn,
 		chunks: [][]byte{header},
 	}
-	s.cond = &sync.Cond{L: &s.mu}
-	return s
+	s.cond.L = &s.mu
+	var err error
+	s.f, err = ioutil.TempFile(workDir, s.name)
+	if err != nil {
+		return nil, err
+	}
+	os.Remove(s.f.Name())
+	if _, err = s.f.Write(header); err != nil {
+		s.f.Close()
+		return nil, err
+	}
+	return s, nil
 }
 
 // add bytes to the end of a live segment
@@ -48,22 +62,29 @@ func (s *segment) Write(d []byte) (int, error) {
 
 	s.mu.Lock()
 	s.chunks = append(s.chunks, buf)
+	s.size += int64(len(buf))
 	s.mu.Unlock()
 	s.cond.Broadcast()
-	return len(d), nil
+	return s.f.Write(d)
 }
 
 // finalize a live segment
 func (s *segment) Finalize(nextSegment time.Duration) {
-	s.mu.Lock()
 	s.dur = nextSegment - s.start
+	s.mu.Lock()
 	s.final = true
-	s.size = 0
-	for _, chunk := range s.chunks {
-		s.size += int64(len(chunk))
-	}
+	s.chunks = nil
 	s.mu.Unlock()
 	s.cond.Broadcast()
+}
+
+// free resources associated with the segment
+func (s *segment) Release() {
+	s.mu.Lock()
+	s.size = 0
+	s.f.Close()
+	s.f = nil
+	s.mu.Unlock()
 }
 
 // m3u8 fragment for this segment
@@ -76,32 +97,54 @@ func (s *segment) Format() string {
 }
 
 // serve the segment to a client
-func (s *segment) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (s *segment) serveHTTP(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Cache-Control", "max-age=600, public")
 	rw.Header().Set("Content-Type", "video/MP2T")
 	flusher, _ := rw.(http.Flusher)
 	atomic.AddUintptr(&s.views, 1)
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var copied int64
 	if s.final {
+		// already finalized
 		// setting content-length avoids chunked transfer-encoding
 		rw.Header().Set("Content-Length", strconv.FormatInt(s.size, 10))
+	} else {
+		// live streaming
+		var pos int
+		var needFlush bool
+		for {
+			if pos == len(s.chunks) && needFlush && flusher != nil {
+				// if there's nothing better to do, then flush the current buffer out and try again
+				s.mu.Unlock()
+				flusher.Flush()
+				needFlush = false
+				s.mu.Lock()
+				continue
+			}
+			for ; pos < len(s.chunks); pos++ {
+				d := s.chunks[pos]
+				s.mu.Unlock()
+				if _, err := rw.Write(d); err != nil {
+					return
+				}
+				copied += int64(len(d))
+				needFlush = true
+				s.mu.Lock()
+			}
+			if s.final {
+				break
+			}
+			s.cond.Wait()
+		}
 	}
-	var pos int
-	for {
-		for ; pos < len(s.chunks); pos++ {
-			d := s.chunks[pos]
-			s.mu.Unlock()
-			rw.Write(d)
-			s.mu.Lock()
-		}
-		if s.final {
-			break
-		}
-		if flusher != nil {
-			// flush HTTP buffers to client while waiting for more chunks
-			flusher.Flush()
-		}
-		s.cond.Wait()
+	remainder := s.size - copied
+	if remainder <= 0 || s.f == nil {
+		// complete
+		s.mu.Unlock()
+		return
 	}
+	// serve the remainder from file
+	r := io.NewSectionReader(s.f, copied, remainder)
+	s.mu.Unlock()
+	io.Copy(rw, r)
 }

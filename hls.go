@@ -18,12 +18,13 @@ type Publisher struct {
 	InitialDuration time.Duration
 	// BufferLength is the approximate duration spanned by all the segments in the playlist. Old segments are removed until the playlist length is less than this value.
 	BufferLength time.Duration
+	// WorkDir is a temporary storage location for segments. Can be empty, in which case the default system temp dir is used.
+	WorkDir string
 
 	segments []*segment
 	seq      int64
 	dcn      bool
 	state    atomic.Value
-	viewers  uintptr
 
 	current *segment
 	muxBuf  bytes.Buffer
@@ -60,8 +61,9 @@ func (p *Publisher) WriteTrailer() error {
 // WritePacket publishes a single packet
 func (p *Publisher) WritePacket(pkt av.Packet) error {
 	if pkt.IsKeyFrame {
-		p.updateViewers()
-		p.newSegment(pkt.Time)
+		if err := p.newSegment(pkt.Time); err != nil {
+			return err
+		}
 	}
 	if p.current == nil {
 		// waiting for first keyframe
@@ -86,12 +88,16 @@ func (p *Publisher) Discontinuity() {
 }
 
 // start a new segment
-func (p *Publisher) newSegment(start time.Duration) {
+func (p *Publisher) newSegment(start time.Duration) error {
 	if p.current != nil {
 		p.current.Finalize(start)
 	}
 	initialDur := p.targetDuration()
-	p.current = newSegment(start, initialDur, p.muxHdr, p.dcn)
+	var err error
+	p.current, err = newSegment(start, initialDur, p.muxHdr, p.dcn, p.WorkDir)
+	if err != nil {
+		return err
+	}
 	p.dcn = false
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
@@ -108,6 +114,7 @@ func (p *Publisher) newSegment(start time.Duration) {
 	segments := make([]*segment, len(p.segments))
 	copy(segments, p.segments)
 	p.state.Store(hlsState{b.Bytes(), segments})
+	return nil
 }
 
 // calculate the longest segment duration
@@ -138,30 +145,13 @@ func (p *Publisher) trimSegments() {
 	// find the oldest segment within the threshold
 	for i, seg := range p.segments {
 		if seg.start >= oldest {
+			for _, r := range p.segments[:i] {
+				r.Release()
+			}
 			p.segments = p.segments[i:]
 			break
 		}
 	}
-}
-
-// calculate view count from the most recent couple of segments
-func (p *Publisher) updateViewers() {
-	var viewers uintptr
-	for _, seg := range p.segments {
-		v := atomic.LoadUintptr(&seg.views)
-		if v > viewers {
-			viewers = v
-		}
-	}
-	atomic.StoreUintptr(&p.viewers, viewers)
-}
-
-// Viewers returns the approximate number of unique viewers of the stream
-func (p *Publisher) Viewers() int {
-	if p == nil {
-		return 0
-	}
-	return int(atomic.LoadUintptr(&p.viewers))
 }
 
 // serve the HLS playlist and segments
@@ -179,9 +169,19 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	for _, chunk := range state.segments {
 		if chunk.name == bn {
-			chunk.ServeHTTP(rw, req)
+			chunk.serveHTTP(rw, req)
 			return
 		}
 	}
 	http.NotFound(rw, req)
+}
+
+// Close frees resources associated with the publisher
+func (p *Publisher) Close() {
+	p.state.Store(hlsState{})
+	p.current = nil
+	for _, seg := range p.segments {
+		seg.Release()
+	}
+	p.segments = nil
 }
