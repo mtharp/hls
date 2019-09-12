@@ -102,7 +102,6 @@ func (p *Publisher) newSegment(start time.Duration) error {
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments()
-	p.seq++
 	// build playlist
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
@@ -139,7 +138,7 @@ func (p *Publisher) targetDuration() time.Duration {
 func (p *Publisher) trimSegments() {
 	goalLen := p.BufferLength
 	if goalLen == 0 {
-		goalLen = 30 * time.Second
+		goalLen = 60 * time.Second
 	}
 	oldest := p.current.start - goalLen
 	// find the oldest segment within the threshold
@@ -149,6 +148,7 @@ func (p *Publisher) trimSegments() {
 				r.Release()
 			}
 			p.segments = p.segments[i:]
+			p.seq += int64(i)
 			break
 		}
 	}
