@@ -20,10 +20,14 @@ type Publisher struct {
 	BufferLength time.Duration
 	// WorkDir is a temporary storage location for segments. Can be empty, in which case the default system temp dir is used.
 	WorkDir string
+	// Prefetch indicates that low-latency HLS (LHLS) tags should be used
+	// https://github.com/video-dev/hlsjs-rfcs/blob/a6e7cc44294b83a7dba8c4f45df6d80c4bd13955/proposals/0001-lhls.md
+	Prefetch bool
 
 	segments []*segment
 	seq      int64
 	dcn      bool
+	dcnseq   int64
 	state    atomic.Value
 
 	current *segment
@@ -106,8 +110,9 @@ func (p *Publisher) newSegment(start time.Duration) error {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
+	fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d", p.dcnseq)
 	for _, chunk := range p.segments {
-		b.WriteString(chunk.Format())
+		b.WriteString(chunk.Format(p.Prefetch))
 	}
 	// publish a snapshot of the segment list
 	segments := make([]*segment, len(p.segments))
@@ -149,10 +154,13 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 		return
 	}
 	for _, seg := range p.segments[:n] {
+		p.seq++
+		if seg.dcn {
+			p.dcnseq++
+		}
 		seg.Release()
 	}
 	p.segments = p.segments[n:]
-	p.seq += int64(n)
 }
 
 // serve the HLS playlist and segments

@@ -88,10 +88,16 @@ func (s *segment) Release() {
 }
 
 // m3u8 fragment for this segment
-func (s *segment) Format() string {
-	formatted := fmt.Sprintf("#EXTINF:%.03f,live\n%s\n", s.dur.Seconds(), s.name)
+func (s *segment) Format(prefetch bool) string {
+	var formatted, pf string
+	if s.final || !prefetch {
+		formatted = fmt.Sprintf("#EXTINF:%.03f,live\n%s\n", s.dur.Seconds(), s.name)
+	} else {
+		formatted = fmt.Sprintf("#EXT-X-PREFETCH:%s\n", s.name)
+		pf = "-PREFETCH"
+	}
 	if s.dcn {
-		return "#EXT-X-DISCONTINUITY\n" + formatted
+		return "#EXT-X" + pf + "-DISCONTINUITY\n" + formatted
 	}
 	return formatted
 }
