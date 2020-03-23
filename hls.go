@@ -101,7 +101,7 @@ func (p *Publisher) newSegment(start time.Duration) error {
 	p.dcn = false
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
-	p.trimSegments()
+	p.trimSegments(initialDur)
 	// build playlist
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
@@ -135,23 +135,24 @@ func (p *Publisher) targetDuration() time.Duration {
 }
 
 // remove the oldest segment until the total length is less than configured
-func (p *Publisher) trimSegments() {
+func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	goalLen := p.BufferLength
 	if goalLen == 0 {
 		goalLen = 60 * time.Second
 	}
-	oldest := p.current.start - goalLen
-	// find the oldest segment within the threshold
-	for i, seg := range p.segments {
-		if seg.start >= oldest {
-			for _, r := range p.segments[:i] {
-				r.Release()
-			}
-			p.segments = p.segments[i:]
-			p.seq += int64(i)
-			break
-		}
+	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
+	if keepSegments < 10 {
+		keepSegments = 10
 	}
+	n := len(p.segments) - keepSegments
+	if n <= 0 {
+		return
+	}
+	for _, seg := range p.segments[:n] {
+		seg.Release()
+	}
+	p.segments = p.segments[n:]
+	p.seq += int64(n)
 }
 
 // serve the HLS playlist and segments
