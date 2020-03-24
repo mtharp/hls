@@ -74,7 +74,10 @@ func (s *segment) Write(d []byte) (int, error) {
 
 // finalize a live segment
 func (s *segment) Finalize(nextSegment time.Duration) {
-	s.dur = nextSegment - s.start
+	// in case of stream restart, timestamps can go backwards, so just stick to the estimate
+	if nextSegment > s.start {
+		s.dur = nextSegment - s.start
+	}
 	s.mu.Lock()
 	s.final = true
 	s.chunks = nil
