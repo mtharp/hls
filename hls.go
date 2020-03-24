@@ -22,9 +22,12 @@ type Publisher struct {
 	WorkDir string
 	// Prefetch indicates that low-latency HLS (LHLS) tags should be used
 	// https://github.com/video-dev/hlsjs-rfcs/blob/a6e7cc44294b83a7dba8c4f45df6d80c4bd13955/proposals/0001-lhls.md
-	Prefetch bool
+	Prefetch  bool
+	Precreate int
 
 	segments []*segment
+	presegs  []*segment
+	segNum   int64
 	seq      int64
 	dcn      bool
 	dcnseq   int64
@@ -97,12 +100,24 @@ func (p *Publisher) newSegment(start time.Duration) error {
 		p.current.Finalize(start)
 	}
 	initialDur := p.targetDuration()
-	var err error
-	p.current, err = newSegment(start, initialDur, p.muxHdr, p.dcn, p.WorkDir)
-	if err != nil {
-		return err
+	if p.segNum == 0 {
+		p.segNum = time.Now().UnixNano()
 	}
+	if len(p.presegs) != 0 {
+		// use a precreated segment
+		p.current = p.presegs[0]
+		copy(p.presegs, p.presegs[1:])
+		p.presegs = p.presegs[:len(p.presegs)-1]
+	} else {
+		var err error
+		p.current, err = newSegment(p.segNum, p.muxHdr, p.WorkDir)
+		if err != nil {
+			return err
+		}
+	}
+	p.current.activate(start, initialDur, p.dcn)
 	p.dcn = false
+	p.segNum++
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -110,14 +125,26 @@ func (p *Publisher) newSegment(start time.Duration) error {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
-	fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d", p.dcnseq)
-	for _, chunk := range p.segments {
+	if p.dcnseq != 0 {
+		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
+	}
+	segments := make([]*segment, len(p.segments)+len(p.presegs))
+	copy(segments, p.segments)
+	copy(segments[len(p.segments):], p.presegs)
+	for _, chunk := range segments {
 		b.WriteString(chunk.Format(p.Prefetch))
 	}
 	// publish a snapshot of the segment list
-	segments := make([]*segment, len(p.segments))
-	copy(segments, p.segments)
 	p.state.Store(hlsState{b.Bytes(), segments})
+	// precreate next segment
+	for len(p.presegs) < p.Precreate {
+		s, err := newSegment(p.segNum, p.muxHdr, p.WorkDir)
+		if err != nil {
+			return err
+		}
+		p.presegs = append(p.presegs, s)
+		p.segNum++
+	}
 	return nil
 }
 
@@ -193,4 +220,8 @@ func (p *Publisher) Close() {
 		seg.Release()
 	}
 	p.segments = nil
+	for _, seg := range p.presegs {
+		seg.Release()
+	}
+	p.presegs = nil
 }

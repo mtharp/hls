@@ -30,13 +30,11 @@ type segment struct {
 }
 
 // create a new live segment
-func newSegment(start, initialDur time.Duration, header []byte, dcn bool, workDir string) (*segment, error) {
+func newSegment(segNum int64, header []byte, workDir string) (*segment, error) {
 	s := &segment{
-		name:   strconv.FormatInt(time.Now().UnixNano(), 36) + ".ts",
-		start:  start,
-		dur:    initialDur,
-		dcn:    dcn,
+		name:   strconv.FormatInt(segNum, 36) + ".ts",
 		chunks: [][]byte{header},
+		size:   int64(len(header)),
 	}
 	s.cond.L = &s.mu
 	var err error
@@ -50,6 +48,12 @@ func newSegment(start, initialDur time.Duration, header []byte, dcn bool, workDi
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *segment) activate(start, initialDur time.Duration, dcn bool) {
+	s.start = start
+	s.dur = initialDur
+	s.dcn = dcn
 }
 
 // add bytes to the end of a live segment
