@@ -65,10 +65,22 @@ func (p *Publisher) WriteTrailer() error {
 	return nil
 }
 
+// ExtendedPacket holds a packet with additional metadata for the HLS playlist
+type ExtendedPacket struct {
+	av.Packet
+	// ProgramTime indicates the wall-clock time of a keyframe packet
+	ProgramTime time.Time
+}
+
 // WritePacket publishes a single packet
 func (p *Publisher) WritePacket(pkt av.Packet) error {
+	return p.WriteExtendedPacket(ExtendedPacket{Packet: pkt})
+}
+
+// WriteExtendedPacket publishes a packetw ith additional metadata
+func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	if pkt.IsKeyFrame {
-		if err := p.newSegment(pkt.Time); err != nil {
+		if err := p.newSegment(pkt.Time, pkt.ProgramTime); err != nil {
 			return err
 		}
 	}
@@ -82,7 +94,7 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 	} else {
 		p.mux.SetWriter(&p.muxBuf)
 	}
-	if err := p.mux.WritePacket(pkt); err != nil {
+	if err := p.mux.WritePacket(pkt.Packet); err != nil {
 		return err
 	}
 	_, err := p.current.Write(p.muxBuf.Bytes())
@@ -95,9 +107,13 @@ func (p *Publisher) Discontinuity() {
 }
 
 // start a new segment
-func (p *Publisher) newSegment(start time.Duration) error {
+func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
 	if p.current != nil {
 		p.current.Finalize(start)
+	}
+	var ptFormatted string
+	if !programTime.IsZero() {
+		ptFormatted = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
 	initialDur := p.targetDuration()
 	if p.segNum == 0 {
@@ -115,7 +131,7 @@ func (p *Publisher) newSegment(start time.Duration) error {
 			return err
 		}
 	}
-	p.current.activate(start, initialDur, p.dcn)
+	p.current.activate(start, initialDur, p.dcn, ptFormatted)
 	p.dcn = false
 	p.segNum++
 	// add the new segment and remove the old

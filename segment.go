@@ -22,6 +22,7 @@ type segment struct {
 	start time.Duration
 	name  string
 	dcn   bool
+	ptime string
 	// finalized
 	f     *os.File
 	final bool
@@ -50,10 +51,11 @@ func newSegment(segNum int64, header []byte, workDir string) (*segment, error) {
 	return s, nil
 }
 
-func (s *segment) activate(start, initialDur time.Duration, dcn bool) {
+func (s *segment) activate(start, initialDur time.Duration, dcn bool, programTime string) {
 	s.start = start
 	s.dur = initialDur
 	s.dcn = dcn
+	s.ptime = programTime
 }
 
 // add bytes to the end of a live segment
@@ -103,8 +105,11 @@ func (s *segment) Format(prefetch bool) string {
 		formatted = fmt.Sprintf("#EXT-X-PREFETCH:%s\n", s.name)
 		pf = "-PREFETCH"
 	}
+	if s.ptime != "" {
+		formatted = "#EXT-X" + pf + "-PROGRAM-DATE-TIME:" + s.ptime + "\n" + formatted
+	}
 	if s.dcn {
-		return "#EXT-X" + pf + "-DISCONTINUITY\n" + formatted
+		formatted = "#EXT-X" + pf + "-DISCONTINUITY\n" + formatted
 	}
 	return formatted
 }
