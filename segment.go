@@ -31,11 +31,16 @@ type segment struct {
 }
 
 // create a new live segment
-func newSegment(segNum int64, header []byte, workDir string) (*segment, error) {
+func newSegment(segNum int64, header []byte, workDir string, fmp4 bool) (*segment, error) {
 	s := &segment{
-		name:   strconv.FormatInt(segNum, 36) + ".ts",
+		name:   strconv.FormatInt(segNum, 36),
 		chunks: [][]byte{header},
 		size:   int64(len(header)),
+	}
+	if fmp4 {
+		s.name += ".m4s"
+	} else {
+		s.name += ".ts"
 	}
 	s.cond.L = &s.mu
 	var err error

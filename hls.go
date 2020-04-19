@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"eaglesong.dev/hls/internal/fmp4"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/ts"
 )
@@ -24,6 +25,8 @@ type Publisher struct {
 	// https://github.com/video-dev/hlsjs-rfcs/blob/a6e7cc44294b83a7dba8c4f45df6d80c4bd13955/proposals/0001-lhls.md
 	Prefetch  bool
 	Precreate int
+	// FMP4 enables use of Fragmented MP4 segments instead of the traditional MPEG2-TS
+	FMP4 bool
 
 	segments []*segment
 	presegs  []*segment
@@ -35,8 +38,11 @@ type Publisher struct {
 
 	current *segment
 	muxBuf  bytes.Buffer
-	mux     *ts.Muxer
 	muxHdr  []byte
+	// mpeg2ts
+	mux *ts.Muxer
+	// fragmented MP4
+	frag *fmp4.Fragmenter
 }
 
 // lock-free snapshot of HLS state for readers
@@ -47,16 +53,24 @@ type hlsState struct {
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
 func (p *Publisher) WriteHeader(streams []av.CodecData) error {
-	var tsb bytes.Buffer
-	if p.mux == nil {
-		p.mux = ts.NewMuxer(&tsb)
+	if p.FMP4 {
+		p.frag = new(fmp4.Fragmenter)
+		if err := p.frag.WriteHeader(streams); err != nil {
+			return err
+		}
+		p.muxHdr = p.frag.SegmentHeader()
 	} else {
-		p.mux.SetWriter(&tsb)
+		var tsb bytes.Buffer
+		if p.mux == nil {
+			p.mux = ts.NewMuxer(&tsb)
+		} else {
+			p.mux.SetWriter(&tsb)
+		}
+		if err := p.mux.WriteHeader(streams); err != nil {
+			return err
+		}
+		p.muxHdr = tsb.Bytes()
 	}
-	if err := p.mux.WriteHeader(streams); err != nil {
-		return err
-	}
-	p.muxHdr = tsb.Bytes()
 	return nil
 }
 
@@ -88,16 +102,22 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		// waiting for first keyframe
 		return nil
 	}
-	p.muxBuf.Reset()
-	if p.mux == nil {
-		p.mux = ts.NewMuxer(&p.muxBuf)
+	var b []byte
+	if p.frag != nil {
+		var err error
+		b, err = p.frag.Fragment(pkt.Packet)
+		if err != nil {
+			return err
+		}
 	} else {
+		p.muxBuf.Reset()
 		p.mux.SetWriter(&p.muxBuf)
+		if err := p.mux.WritePacket(pkt.Packet); err != nil {
+			return err
+		}
+		b = p.muxBuf.Bytes()
 	}
-	if err := p.mux.WritePacket(pkt.Packet); err != nil {
-		return err
-	}
-	_, err := p.current.Write(p.muxBuf.Bytes())
+	_, err := p.current.Write(b)
 	return err
 }
 
@@ -126,7 +146,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		p.presegs = p.presegs[:len(p.presegs)-1]
 	} else {
 		var err error
-		p.current, err = newSegment(p.segNum, p.muxHdr, p.WorkDir)
+		p.current, err = newSegment(p.segNum, p.muxHdr, p.WorkDir, p.FMP4)
 		if err != nil {
 			return err
 		}
@@ -139,10 +159,17 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	p.trimSegments(initialDur)
 	// build playlist
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
+	ver := 3
+	if p.FMP4 {
+		ver = 6
+	}
+	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", ver, int(initialDur.Seconds()))
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
 	if p.dcnseq != 0 {
 		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
+	}
+	if p.FMP4 {
+		b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	}
 	segments := make([]*segment, len(p.segments)+len(p.presegs))
 	copy(segments, p.segments)
@@ -154,7 +181,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	p.state.Store(hlsState{b.Bytes(), segments})
 	// precreate next segment
 	for len(p.presegs) < p.Precreate {
-		s, err := newSegment(p.segNum, p.muxHdr, p.WorkDir)
+		s, err := newSegment(p.segNum, p.muxHdr, p.WorkDir, p.FMP4)
 		if err != nil {
 			return err
 		}
@@ -214,10 +241,17 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	bn := path.Base(req.URL.Path)
-	if bn == "index.m3u8" {
+	switch bn {
+	case "index.m3u8":
 		rw.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		rw.Write(state.playlist)
 		return
+	case "init.mp4":
+		if b := p.frag.FileHeader(); len(b) != 0 {
+			rw.Header().Set("Content-Type", "video/mp4")
+			rw.Write(b)
+			return
+		}
 	}
 	for _, chunk := range state.segments {
 		if chunk.name == bn {
