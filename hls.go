@@ -3,14 +3,15 @@ package hls
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"sync/atomic"
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4"
+	"eaglesong.dev/hls/internal/tsfrag"
 	"github.com/nareix/joy4/av"
-	"github.com/nareix/joy4/format/ts"
 )
 
 // Publisher implements a live HLS stream server
@@ -37,12 +38,14 @@ type Publisher struct {
 	state    atomic.Value
 
 	current *segment
-	muxBuf  bytes.Buffer
-	muxHdr  []byte
-	// mpeg2ts
-	mux *ts.Muxer
-	// fragmented MP4
-	frag *fmp4.Fragmenter
+	frag    fragmenter
+}
+
+type fragmenter interface {
+	av.PacketWriter
+	SetWriter(io.Writer) error
+	Flush(time.Duration) error
+	FileHeader() []byte
 }
 
 // lock-free snapshot of HLS state for readers
@@ -53,28 +56,16 @@ type hlsState struct {
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
 func (p *Publisher) WriteHeader(streams []av.CodecData) error {
+	var err error
 	if p.FMP4 {
-		p.frag = new(fmp4.Fragmenter)
-		if err := p.frag.WriteHeader(streams); err != nil {
-			return err
-		}
-		p.muxHdr = p.frag.SegmentHeader()
+		p.frag, err = fmp4.NewFragmenter(streams)
 	} else {
-		var tsb bytes.Buffer
-		if p.mux == nil {
-			p.mux = ts.NewMuxer(&tsb)
-		} else {
-			p.mux.SetWriter(&tsb)
-		}
-		if err := p.mux.WriteHeader(streams); err != nil {
-			return err
-		}
-		p.muxHdr = tsb.Bytes()
+		p.frag, err = tsfrag.New(streams)
 	}
-	return nil
+	return err
 }
 
-// WriteTrailer does nothing
+// WriteTrailer does nothing, but fulfills av.Muxer
 func (p *Publisher) WriteTrailer() error {
 	return nil
 }
@@ -102,23 +93,7 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		// waiting for first keyframe
 		return nil
 	}
-	var b []byte
-	if p.frag != nil {
-		var err error
-		b, err = p.frag.Fragment(pkt.Packet)
-		if err != nil {
-			return err
-		}
-	} else {
-		p.muxBuf.Reset()
-		p.mux.SetWriter(&p.muxBuf)
-		if err := p.mux.WritePacket(pkt.Packet); err != nil {
-			return err
-		}
-		b = p.muxBuf.Bytes()
-	}
-	_, err := p.current.Write(b)
-	return err
+	return p.frag.WritePacket(pkt.Packet)
 }
 
 // Discontinuity inserts a marker into the playlist before the next segment indicating that the decoder should be reset
@@ -129,6 +104,10 @@ func (p *Publisher) Discontinuity() {
 // start a new segment
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
 	if p.current != nil {
+		// complete the previous segment
+		if err := p.frag.Flush(start); err != nil {
+			return err
+		}
 		p.current.Finalize(start)
 	}
 	var ptFormatted string
@@ -146,7 +125,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		p.presegs = p.presegs[:len(p.presegs)-1]
 	} else {
 		var err error
-		p.current, err = newSegment(p.segNum, p.muxHdr, p.WorkDir, p.FMP4)
+		p.current, err = newSegment(p.segNum, p.WorkDir, p.FMP4)
 		if err != nil {
 			return err
 		}
@@ -154,6 +133,9 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	p.current.activate(start, initialDur, p.dcn, ptFormatted)
 	p.dcn = false
 	p.segNum++
+	if err := p.frag.SetWriter(p.current); err != nil {
+		return err
+	}
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -181,7 +163,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	p.state.Store(hlsState{b.Bytes(), segments})
 	// precreate next segment
 	for len(p.presegs) < p.Precreate {
-		s, err := newSegment(p.segNum, p.muxHdr, p.WorkDir, p.FMP4)
+		s, err := newSegment(p.segNum, p.WorkDir, p.FMP4)
 		if err != nil {
 			return err
 		}
@@ -213,7 +195,7 @@ func (p *Publisher) targetDuration() time.Duration {
 func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	goalLen := p.BufferLength
 	if goalLen == 0 {
-		goalLen = 60 * time.Second
+		goalLen = 15 * time.Second // FIXME
 	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
 	if keepSegments < 10 {

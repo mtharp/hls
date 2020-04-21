@@ -281,11 +281,11 @@ func (self Movie) marshal(b []byte) (n int) {
 	if self.Header != nil {
 		n += self.Header.Marshal(b[n:])
 	}
-	if self.MovieExtend != nil {
-		n += self.MovieExtend.Marshal(b[n:])
-	}
 	for _, atom := range self.Tracks {
 		n += atom.Marshal(b[n:])
+	}
+	if self.MovieExtend != nil {
+		n += self.MovieExtend.Marshal(b[n:])
 	}
 	for _, atom := range self.Unknowns {
 		n += atom.Marshal(b[n:])
@@ -297,11 +297,11 @@ func (self Movie) Len() (n int) {
 	if self.Header != nil {
 		n += self.Header.Len()
 	}
-	if self.MovieExtend != nil {
-		n += self.MovieExtend.Len()
-	}
 	for _, atom := range self.Tracks {
 		n += atom.Len()
+	}
+	if self.MovieExtend != nil {
+		n += self.MovieExtend.Len()
 	}
 	for _, atom := range self.Unknowns {
 		n += atom.Len()
@@ -375,22 +375,16 @@ func (self Movie) Children() (r []Atom) {
 }
 
 type MovieHeader struct {
-	Version           uint8
-	Flags             uint32
-	CreateTime        time.Time
-	ModifyTime        time.Time
-	TimeScale         uint32
-	Duration          uint32
-	PreferredRate     float64
-	PreferredVolume   float64
-	Matrix            [9]int32
-	PreviewTime       time.Time
-	PreviewDuration   time.Time
-	PosterTime        time.Time
-	SelectionTime     time.Time
-	SelectionDuration time.Time
-	CurrentTime       time.Time
-	NextTrackId       int32
+	Version         uint8
+	Flags           uint32
+	CreateTime      time.Time
+	ModifyTime      time.Time
+	TimeScale       uint32
+	Duration        uint32
+	PreferredRate   float64
+	PreferredVolume float64
+	Matrix          [9]int32
+	NextTrackID     uint32
 	AtomPos
 }
 
@@ -422,19 +416,8 @@ func (self MovieHeader) marshal(b []byte) (n int) {
 		pio.PutI32BE(b[n:], entry)
 		n += 4
 	}
-	PutTime32(b[n:], self.PreviewTime)
-	n += 4
-	PutTime32(b[n:], self.PreviewDuration)
-	n += 4
-	PutTime32(b[n:], self.PosterTime)
-	n += 4
-	PutTime32(b[n:], self.SelectionTime)
-	n += 4
-	PutTime32(b[n:], self.SelectionDuration)
-	n += 4
-	PutTime32(b[n:], self.CurrentTime)
-	n += 4
-	pio.PutI32BE(b[n:], self.NextTrackId)
+	n += 24
+	pio.PutU32BE(b[n:], self.NextTrackID)
 	n += 4
 	return
 }
@@ -450,12 +433,7 @@ func (self MovieHeader) Len() (n int) {
 	n += 2
 	n += 10
 	n += 4 * len(self.Matrix[:])
-	n += 4
-	n += 4
-	n += 4
-	n += 4
-	n += 4
-	n += 4
+	n += 24
 	n += 4
 	return
 }
@@ -519,47 +497,12 @@ func (self *MovieHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 		self.Matrix[i] = pio.I32BE(b[n:])
 		n += 4
 	}
+	n += 24
 	if len(b) < n+4 {
-		err = parseErr("PreviewTime", n+offset, err)
+		err = parseErr("NextTrackID", n+offset, err)
 		return
 	}
-	self.PreviewTime = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("PreviewDuration", n+offset, err)
-		return
-	}
-	self.PreviewDuration = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("PosterTime", n+offset, err)
-		return
-	}
-	self.PosterTime = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("SelectionTime", n+offset, err)
-		return
-	}
-	self.SelectionTime = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("SelectionDuration", n+offset, err)
-		return
-	}
-	self.SelectionDuration = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("CurrentTime", n+offset, err)
-		return
-	}
-	self.CurrentTime = GetTime32(b[n:])
-	n += 4
-	if len(b) < n+4 {
-		err = parseErr("NextTrackId", n+offset, err)
-		return
-	}
-	self.NextTrackId = pio.I32BE(b[n:])
+	self.NextTrackID = pio.U32BE(b[n:])
 	n += 4
 	return
 }
@@ -2837,7 +2780,7 @@ func (self TrackFrag) marshal(b []byte) (n int) {
 		n += self.DecodeTime.Marshal(b[n:])
 	}
 	if self.Run != nil {
-		n += self.Run.marshalEx(b[n:], self.Header)
+		n += self.Run.Marshal(b[n:])
 	}
 	for _, atom := range self.Unknowns {
 		n += atom.Marshal(b[n:])
@@ -2853,7 +2796,7 @@ func (self TrackFrag) Len() (n int) {
 		n += self.DecodeTime.Len()
 	}
 	if self.Run != nil {
-		n += self.Run.lenEx(self.Header)
+		n += self.Run.Len()
 	}
 	for _, atom := range self.Unknowns {
 		n += atom.Len()
@@ -2892,7 +2835,7 @@ func (self *TrackFrag) Unmarshal(b []byte, offset int) (n int, err error) {
 		case TRUN:
 			{
 				atom := &TrackFragRun{}
-				if _, err = atom.unmarshalEx(b[n:n+size], offset+n, self.Header); err != nil {
+				if _, err = atom.Unmarshal(b[n:n+size], offset+n); err != nil {
 					err = parseErr("trun", n+offset, err)
 					return
 				}
@@ -3192,17 +3135,11 @@ type TrackFragRun struct {
 
 func (self TrackFragRun) Marshal(b []byte) (n int) {
 	pio.PutU32BE(b[4:], uint32(TRUN))
-	n += self.marshal(b[8:], &TrackFragHeader{}) + 8
+	n += self.marshal(b[8:]) + 8
 	pio.PutU32BE(b[0:], uint32(n))
 	return
 }
-func (self TrackFragRun) marshalEx(b []byte, header *TrackFragHeader) (n int) {
-	pio.PutU32BE(b[4:], uint32(TRUN))
-	n += self.marshal(b[8:], header) + 8
-	pio.PutU32BE(b[0:], uint32(n))
-	return
-}
-func (self TrackFragRun) marshal(b []byte, header *TrackFragHeader) (n int) {
+func (self TrackFragRun) marshal(b []byte) (n int) {
 	pio.PutU8(b[n:], self.Version)
 	n += 1
 	pio.PutU24BE(b[n:], self.Flags)
@@ -3236,16 +3173,17 @@ func (self TrackFragRun) marshal(b []byte, header *TrackFragHeader) (n int) {
 			n += 4
 		}
 		if self.Flags&TRUN_SAMPLE_CTS != 0 {
-			pio.PutU32BE(b[n:], entry.Cts)
+			if self.Version > 0 {
+				pio.PutI32BE(b[:n], int32(entry.Cts))
+			} else {
+				pio.PutU32BE(b[n:], uint32(entry.Cts))
+			}
 			n += 4
 		}
 	}
 	return
 }
 func (self TrackFragRun) Len() (n int) {
-	return self.lenEx(&TrackFragHeader{})
-}
-func (self TrackFragRun) lenEx(header *TrackFragHeader) (n int) {
 	n += 8
 	n += 1
 	n += 3
@@ -3278,9 +3216,6 @@ func (self TrackFragRun) lenEx(header *TrackFragHeader) (n int) {
 	return
 }
 func (self *TrackFragRun) Unmarshal(b []byte, offset int) (n int, err error) {
-	return self.unmarshalEx(b, offset, &TrackFragHeader{})
-}
-func (self *TrackFragRun) unmarshalEx(b []byte, offset int, header *TrackFragHeader) (n int, err error) {
 	(&self.AtomPos).setPos(offset, len(b))
 	n += 8
 	if len(b) < n+1 {
@@ -3335,7 +3270,11 @@ func (self *TrackFragRun) unmarshalEx(b []byte, offset int, header *TrackFragHea
 			n += 4
 		}
 		if self.Flags&TRUN_SAMPLE_CTS != 0 {
-			entry.Cts = pio.U32BE(b[n:])
+			if self.Version > 0 {
+				entry.Cts = int64(pio.I32BE(b[n:]))
+			} else {
+				entry.Cts = int64(pio.U32BE(b[n:]))
+			}
 			n += 4
 		}
 	}
@@ -3349,7 +3288,7 @@ type TrackFragRunEntry struct {
 	Duration uint32
 	Size     uint32
 	Flags    uint32
-	Cts      uint32
+	Cts      int64
 }
 
 type TrackFragHeader struct {

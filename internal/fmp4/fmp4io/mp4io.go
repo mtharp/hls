@@ -32,27 +32,37 @@ func parseErr(debug string, offset int, prev error) (err error) {
 
 func GetTime32(b []byte) (t time.Time) {
 	sec := pio.U32BE(b)
-	t = time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC)
-	t = t.Add(time.Second * time.Duration(sec))
+	if sec != 0 {
+		t = time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC)
+		t = t.Add(time.Second * time.Duration(sec))
+	}
 	return
 }
 
 func PutTime32(b []byte, t time.Time) {
-	dur := t.Sub(time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC))
-	sec := uint32(dur / time.Second)
+	var sec uint32
+	if !t.IsZero() {
+		dur := t.Sub(time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC))
+		sec = uint32(dur / time.Second)
+	}
 	pio.PutU32BE(b, sec)
 }
 
 func GetTime64(b []byte) (t time.Time) {
 	sec := pio.U64BE(b)
-	t = time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC)
-	t = t.Add(time.Second * time.Duration(sec))
+	if sec != 0 {
+		t = time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC)
+		t = t.Add(time.Second * time.Duration(sec))
+	}
 	return
 }
 
 func PutTime64(b []byte, t time.Time) {
-	dur := t.Sub(time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC))
-	sec := uint64(dur / time.Second)
+	var sec uint64
+	if !t.IsZero() {
+		dur := t.Sub(time.Date(1904, time.January, 1, 0, 0, 0, 0, time.UTC))
+		sec = uint64(dur / time.Second)
+	}
 	pio.PutU64BE(b, sec)
 }
 

@@ -21,6 +21,7 @@ type segment struct {
 	// fixed at creation
 	start time.Duration
 	name  string
+	mime  string
 	dcn   bool
 	ptime string
 	// finalized
@@ -31,16 +32,14 @@ type segment struct {
 }
 
 // create a new live segment
-func newSegment(segNum int64, header []byte, workDir string, fmp4 bool) (*segment, error) {
-	s := &segment{
-		name:   strconv.FormatInt(segNum, 36),
-		chunks: [][]byte{header},
-		size:   int64(len(header)),
-	}
+func newSegment(segNum int64, workDir string, fmp4 bool) (*segment, error) {
+	s := &segment{name: strconv.FormatInt(segNum, 36)}
 	if fmp4 {
 		s.name += ".m4s"
+		s.mime = "video/iso.segment"
 	} else {
 		s.name += ".ts"
+		s.mime = "video/MP2T"
 	}
 	s.cond.L = &s.mu
 	var err error
@@ -49,10 +48,6 @@ func newSegment(segNum int64, header []byte, workDir string, fmp4 bool) (*segmen
 		return nil, err
 	}
 	os.Remove(s.f.Name())
-	if _, err = s.f.Write(header); err != nil {
-		s.f.Close()
-		return nil, err
-	}
 	return s, nil
 }
 
@@ -122,7 +117,7 @@ func (s *segment) Format(prefetch bool) string {
 // serve the segment to a client
 func (s *segment) serveHTTP(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Cache-Control", "max-age=600, public")
-	rw.Header().Set("Content-Type", "video/MP2T")
+	rw.Header().Set("Content-Type", s.mime)
 	flusher, _ := rw.(http.Flusher)
 	atomic.AddUintptr(&s.views, 1)
 	s.mu.Lock()
