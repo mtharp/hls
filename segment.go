@@ -3,9 +3,9 @@ package hls
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -42,16 +42,13 @@ func newSegment(segNum int64, workDir string, fmp4 bool) (*segment, error) {
 		s.mime = "video/MP2T"
 	}
 	s.cond.L = &s.mu
-	// FIXME
 	var err error
-	// s.f, err = ioutil.TempFile(workDir, s.name)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// os.Remove(s.f.Name())
-	// return s, nil
-	s.f, err = os.Create(filepath.Join(workDir, s.name))
-	return s, err
+	s.f, err = ioutil.TempFile(workDir, s.name)
+	if err != nil {
+		return nil, err
+	}
+	os.Remove(s.f.Name())
+	return s, nil
 }
 
 func (s *segment) activate(start, initialDur time.Duration, dcn bool, programTime string) {

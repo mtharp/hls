@@ -298,12 +298,11 @@ func (a Track) marshal(b []byte) (n int) {
 	if a.Header != nil {
 		n += a.Header.Marshal(b[n:])
 	}
-	// FIXME
-	for _, atom := range a.Unknowns {
-		n += atom.Marshal(b[n:])
-	}
 	if a.Media != nil {
 		n += a.Media.Marshal(b[n:])
+	}
+	for _, atom := range a.Unknowns {
+		n += atom.Marshal(b[n:])
 	}
 	return
 }

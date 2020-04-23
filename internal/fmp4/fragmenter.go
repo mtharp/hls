@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"sort"
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
@@ -32,8 +31,7 @@ func NewFragmenter(streams []av.CodecData) (*Fragmenter, error) {
 
 func (f *Fragmenter) buildHeader(streams []av.CodecData) error {
 	ftyp := fmp4io.FileType{
-		MajorBrand:   0x69736f35, // iso5
-		MinorVersion: 0x200,
+		MajorBrand: 0x69736f36, // iso60x69736f35, // iso5
 		CompatibleBrands: []uint32{
 			0x69736f36, // iso6
 			0x6d703431, // mp41
@@ -49,13 +47,6 @@ func (f *Fragmenter) buildHeader(streams []av.CodecData) error {
 			TimeScale:       1000,
 		},
 		MovieExtend: &fmp4io.MovieExtend{},
-		Unknowns: []fmp4io.Atom{
-			&fmp4io.Dummy{
-				Data:    []byte{0x0, 0x0, 0x0, 0x62, 0x75, 0x64, 0x74, 0x61, 0x0, 0x0, 0x0, 0x5a, 0x6d, 0x65, 0x74, 0x61, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x21, 0x68, 0x64, 0x6c, 0x72, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x6d, 0x64, 0x69, 0x72, 0x61, 0x70, 0x70, 0x6c, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2d, 0x69, 0x6c, 0x73, 0x74, 0x0, 0x0, 0x0, 0x25, 0xa9, 0x74, 0x6f, 0x6f, 0x0, 0x0, 0x0, 0x1d, 0x64, 0x61, 0x74, 0x61, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x4c, 0x61, 0x76, 0x66, 0x35, 0x38, 0x2e, 0x32, 0x39, 0x2e, 0x31, 0x30, 0x30},
-				Tag_:    0x75647461,
-				AtomPos: fmp4io.AtomPos{Offset: 1238, Size: 98},
-			},
-		},
 	}
 	for i, cd := range streams {
 		if cd.Type().IsVideo() {
@@ -69,12 +60,6 @@ func (f *Fragmenter) buildHeader(streams []av.CodecData) error {
 		moov.Tracks = append(moov.Tracks, s.trackAtom)
 		moov.MovieExtend.Tracks = append(moov.MovieExtend.Tracks, s.exAtom)
 	}
-	sort.Slice(moov.Tracks, func(i, j int) bool {
-		return moov.Tracks[i].Header.TrackID < moov.Tracks[j].Header.TrackID
-	})
-	sort.Slice(moov.MovieExtend.Tracks, func(i, j int) bool {
-		return moov.MovieExtend.Tracks[i].TrackID < moov.MovieExtend.Tracks[j].TrackID
-	})
 	b := make([]byte, ftypl+moov.Len())
 	ftyp.Marshal(b)
 	moov.Marshal(b[ftypl:])
@@ -177,7 +162,7 @@ func (f *Fragmenter) WritePacket(pkt av.Packet) error {
 			if pkt.IsKeyFrame && pkt.Time != f.lastKey {
 				// flush before every keyframe
 				flush = true
-			} else if pkt.Time-s.pending[0].Time >= f.FragmentLength {
+			} else if pkt.Time-s.pending[0].Time >= f.FragmentLength-time.Millisecond {
 				// flush periodically
 				flush = true
 			}
