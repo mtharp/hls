@@ -3,13 +3,11 @@ package fmp4
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/h264parser"
-	"github.com/nareix/joy4/utils/bits/pio"
 )
 
 type fragStream struct {
@@ -78,9 +76,9 @@ func (s *fragStream) addPacket(pkt av.Packet) error {
 	return nil
 }
 
-func (s *fragStream) flush(endTime time.Duration, seqNum *uint32) ([]byte, error) {
+func (s *fragStream) makeFragment(endTime time.Duration) (*fmp4io.TrackFrag, error) {
 	if len(s.pending) == 0 {
-		return nil, nil
+		return nil, errors.New("flush of empty stream")
 	}
 	// timescale for first packet
 	startTime := s.pending[0].Time
@@ -112,10 +110,8 @@ func (s *fragStream) flush(endTime time.Duration, seqNum *uint32) ([]byte, error
 	}
 	// build track run entries, per packet
 	curDTS := startDTS
-	var mdatLen int
 	var sameSize int
 	var sameDur uint32
-	durs := make(map[uint32]int)
 	for i, pkt := range s.pending {
 		if i == 0 {
 			sameSize = len(pkt.Data)
@@ -123,7 +119,6 @@ func (s *fragStream) flush(endTime time.Duration, seqNum *uint32) ([]byte, error
 			sameSize = -1
 		}
 		track.Run.Entries[i].Size = uint32(len(pkt.Data))
-		mdatLen += len(pkt.Data)
 		// calculate duration from the output timescale to avoid accumulating rounding errors
 		var nextTime time.Duration
 		if i < len(s.pending)-1 {
@@ -142,8 +137,7 @@ func (s *fragStream) flush(endTime time.Duration, seqNum *uint32) ([]byte, error
 		}
 		nextDTS := timeToScale(nextTime, s.timeScale)
 		dur := uint32(nextDTS - curDTS)
-		log.Printf("%3d %d -> %d = %d  %s -> %s = %s", s.trackID, curDTS, nextDTS, dur, pkt.Time, nextTime, nextTime-pkt.Time)
-		durs[dur]++
+		// log.Printf("%3d %d -> %d = %d  %s -> %s = %s", s.trackID, curDTS, nextDTS, dur, pkt.Time, nextTime, nextTime-pkt.Time)
 		track.Run.Entries[i].Duration = dur
 		if i == 0 {
 			sameDur = dur
@@ -174,27 +168,6 @@ func (s *fragStream) flush(endTime time.Duration, seqNum *uint32) ([]byte, error
 		track.Header.DefaultDuration = sameDur
 		track.Header.Flags |= fmp4io.TFHD_DEFAULT_DURATION
 		track.Run.Flags &^= fmp4io.TRUN_SAMPLE_DURATION
-		log.Println("samesies", s.trackID)
-	} else {
-		log.Printf("not same :( %d %v", s.trackID, durs)
 	}
-	// marshal fragment
-	moof := &fmp4io.MovieFrag{
-		Header: &fmp4io.MovieFragHeader{
-			Seqnum: *seqNum,
-		},
-		Tracks: []*fmp4io.TrackFrag{track},
-	}
-	(*seqNum)++
-	track.Run.DataOffset = uint32(moof.Len() + 8)
-	// assemble final blob
-	b := make([]byte, moof.Len()+8, moof.Len()+8+mdatLen)
-	n := moof.Marshal(b)
-	pio.PutU32BE(b[n:], uint32(8+mdatLen))
-	pio.PutU32BE(b[n+4:], uint32(fmp4io.MDAT))
-	for _, pkt := range s.pending {
-		b = append(b, pkt.Data...)
-	}
-	s.pending = nil
-	return b, nil
+	return track, nil
 }

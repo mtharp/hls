@@ -37,6 +37,7 @@ type Publisher struct {
 	dcnseq   int64
 	state    atomic.Value
 
+	vidx    int
 	current *segment
 	frag    fragmenter
 }
@@ -56,6 +57,11 @@ type hlsState struct {
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
 func (p *Publisher) WriteHeader(streams []av.CodecData) error {
+	for i, cd := range streams {
+		if cd.Type().IsVideo() {
+			p.vidx = i
+		}
+	}
 	var err error
 	if p.FMP4 {
 		p.frag, err = fmp4.NewFragmenter(streams)
@@ -84,7 +90,7 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 
 // WriteExtendedPacket publishes a packetw ith additional metadata
 func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
-	if pkt.IsKeyFrame {
+	if pkt.IsKeyFrame && int(pkt.Idx) == p.vidx {
 		if err := p.newSegment(pkt.Time, pkt.ProgramTime); err != nil {
 			return err
 		}
@@ -195,7 +201,7 @@ func (p *Publisher) targetDuration() time.Duration {
 func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	goalLen := p.BufferLength
 	if goalLen == 0 {
-		goalLen = 15 * time.Second // FIXME
+		goalLen = 60 * time.Second
 	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
 	if keepSegments < 10 {

@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"time"
 
+	"eaglesong.dev/hls/internal/fmp4/esio"
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/aacparser"
@@ -14,7 +15,8 @@ import (
 func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 	s := &fragStream{CodecData: codec}
 	sample := &fmp4io.SampleTable{
-		SampleDesc:    &fmp4io.SampleDesc{},
+		SampleDesc: &fmp4io.SampleDesc{},
+		// TODO: prune
 		TimeToSample:  &fmp4io.TimeToSample{},
 		SampleToChunk: &fmp4io.SampleToChunk{},
 		SampleSize:    &fmp4io.SampleSize{},
@@ -22,7 +24,7 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 	}
 	switch cd := codec.(type) {
 	case h264parser.CodecData:
-		s.timeScale = 48000
+		s.timeScale = 15360
 		sample.SampleDesc.AVC1Desc = &fmp4io.AVC1Desc{
 			DataRefIdx:           1,
 			HorizontalResolution: 72,
@@ -33,16 +35,26 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 			Depth:                24,
 			ColorTableId:         -1,
 			Conf:                 &fmp4io.AVC1Conf{Data: cd.AVCDecoderConfRecordBytes()},
+			// FIXME
+			PixelAspect: &fmp4io.PixelAspect{HorizontalSpacing: 1, VerticalSpacing: 1},
 		}
 	case aacparser.CodecData:
 		s.timeScale = 48000
+		dc, err := esio.DecoderConfigFromCodecData(cd)
+		if err != nil {
+			return nil, err
+		}
 		sample.SampleDesc.MP4ADesc = &fmp4io.MP4ADesc{
 			DataRefIdx:       1,
 			NumberOfChannels: int16(cd.ChannelLayout().Count()),
-			SampleSize:       int16(cd.SampleFormat().BytesPerSample()),
+			SampleSize:       16,
 			SampleRate:       float64(cd.SampleRate()),
 			Conf: &fmp4io.ElemStreamDesc{
-				DecConfig: cd.MPEG4AudioConfigBytes(),
+				StreamDescriptor: &esio.StreamDescriptor{
+					ESID:          uint16(s.trackID),
+					DecoderConfig: dc,
+					SLConfig:      &esio.SLConfigDescriptor{Predefined: esio.SLConfigMP4},
+				},
 			},
 		}
 	default:
@@ -71,6 +83,8 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 			},
 		},
 	}
+	// FIXME
+	edts := &fmp4io.Dummy{Tag_: 0x65647473}
 	if codec.Type().IsVideo() {
 		vc := codec.(av.VideoCodecData)
 		s.trackAtom.Header.TrackID = 1
@@ -83,8 +97,9 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 		}
 		s.trackAtom.Header.TrackWidth = float64(vc.Width())
 		s.trackAtom.Header.TrackHeight = float64(vc.Height())
+		edts.Data = []byte{0x0, 0x0, 0x0, 0x30, 0x65, 0x64, 0x74, 0x73, 0x0, 0x0, 0x0, 0x28, 0x65, 0x6c, 0x73, 0x74, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x2, 0xdd, 0xff, 0xff, 0xff, 0xff, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0}
 	} else {
-		s.trackAtom.Header.TrackID = 100
+		s.trackAtom.Header.TrackID = 2
 		s.trackAtom.Header.Volume = 1
 		s.trackAtom.Header.AlternateGroup = 1
 		s.trackAtom.Media.Handler = &fmp4io.HandlerRefer{
@@ -92,7 +107,9 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 			Name: "SoundHandler",
 		}
 		s.trackAtom.Media.Info.Sound = &fmp4io.SoundMediaInfo{}
+		edts.Data = []byte{0x0, 0x0, 0x0, 0x30, 0x65, 0x64, 0x74, 0x73, 0x0, 0x0, 0x0, 0x28, 0x65, 0x6c, 0x73, 0x74, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0xb, 0xff, 0xff, 0xff, 0xff, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0}
 	}
+	s.trackAtom.Unknowns = append(s.trackAtom.Unknowns, edts)
 	s.trackID = s.trackAtom.Header.TrackID
 	s.exAtom = &fmp4io.TrackExtend{
 		TrackID:              s.trackID,
