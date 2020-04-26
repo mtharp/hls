@@ -192,6 +192,7 @@ type SampleDesc struct {
 	Version  uint8
 	AVC1Desc *AVC1Desc
 	MP4ADesc *MP4ADesc
+	OpusDesc *OpusSampleEntry
 	Unknowns []Atom
 	AtomPos
 }
@@ -214,6 +215,9 @@ func (a SampleDesc) marshal(b []byte) (n int) {
 	if a.MP4ADesc != nil {
 		_childrenNR++
 	}
+	if a.OpusDesc != nil {
+		_childrenNR++
+	}
 	_childrenNR += len(a.Unknowns)
 	pio.PutI32BE(b[n:], int32(_childrenNR))
 	n += 4
@@ -222,6 +226,9 @@ func (a SampleDesc) marshal(b []byte) (n int) {
 	}
 	if a.MP4ADesc != nil {
 		n += a.MP4ADesc.Marshal(b[n:])
+	}
+	if a.OpusDesc != nil {
+		n += a.OpusDesc.Marshal(b[n:])
 	}
 	for _, atom := range a.Unknowns {
 		n += atom.Marshal(b[n:])
@@ -239,6 +246,9 @@ func (a SampleDesc) Len() (n int) {
 	}
 	if a.MP4ADesc != nil {
 		n += a.MP4ADesc.Len()
+	}
+	if a.OpusDesc != nil {
+		n += a.OpusDesc.Len()
 	}
 	for _, atom := range a.Unknowns {
 		n += atom.Len()
@@ -283,6 +293,14 @@ func (a *SampleDesc) Unmarshal(b []byte, offset int) (n int, err error) {
 				}
 				a.MP4ADesc = atom
 			}
+		case OPUS:
+			{
+				atom := &OpusSampleEntry{}
+				if _, err = atom.Unmarshal(b[n:n+size], offset+n); err != nil {
+					err = parseErr("OPUS", n+offset, err)
+					return
+				}
+			}
 		default:
 			{
 				atom := &Dummy{Tag_: tag, Data: b[n : n+size]}
@@ -304,6 +322,9 @@ func (a SampleDesc) Children() (r []Atom) {
 	}
 	if a.MP4ADesc != nil {
 		r = append(r, a.MP4ADesc)
+	}
+	if a.OpusDesc != nil {
+		r = append(r, a.OpusDesc)
 	}
 	r = append(r, a.Unknowns...)
 	return

@@ -10,6 +10,7 @@ import (
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/aacparser"
 	"github.com/nareix/joy4/codec/h264parser"
+	"github.com/nareix/joy4/codec/opusparser"
 )
 
 func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
@@ -52,6 +53,19 @@ func newStream(codec av.CodecData, moov *fmp4io.Movie) (*fragStream, error) {
 					DecoderConfig: dc,
 					SLConfig:      &esio.SLConfigDescriptor{Predefined: esio.SLConfigMP4},
 				},
+			},
+		}
+	case opusparser.CodecData, *opusparser.CodecData:
+		cda := codec.(av.AudioCodecData)
+		s.timeScale = 48000
+		sample.SampleDesc.OpusDesc = &fmp4io.OpusSampleEntry{
+			DataRefIdx:       1,
+			NumberOfChannels: uint16(cda.ChannelLayout().Count()),
+			SampleSize:       16,
+			SampleRate:       float64(cda.SampleRate()),
+			Conf: &fmp4io.OpusSpecificConfiguration{
+				OutputChannelCount: uint8(cda.ChannelLayout().Count()),
+				PreSkip:            3840, // 80ms
 			},
 		}
 	default:
