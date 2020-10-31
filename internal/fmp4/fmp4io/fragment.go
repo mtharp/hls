@@ -174,24 +174,30 @@ func (a MovieFragHeader) Tag() Tag {
 	return MFHD
 }
 
+// TRUN is the atom type for TrackFragRun
 const TRUN = Tag(0x7472756e)
 
+// TrackFragRun atom
 type TrackFragRun struct {
 	Version          uint8
-	Flags            uint32
+	Flags            TrackRunFlags
 	DataOffset       uint32
-	FirstSampleFlags uint32
+	FirstSampleFlags SampleFlags
 	Entries          []TrackFragRunEntry
 	AtomPos
 }
 
+// TrackRunFlags is the type of TrackFragRun's Flags
+type TrackRunFlags uint32
+
+// Defined flags for TrackFragRun
 const (
-	TRUN_DATA_OFFSET        = 0x01
-	TRUN_FIRST_SAMPLE_FLAGS = 0x04
-	TRUN_SAMPLE_DURATION    = 0x100
-	TRUN_SAMPLE_SIZE        = 0x200
-	TRUN_SAMPLE_FLAGS       = 0x400
-	TRUN_SAMPLE_CTS         = 0x800
+	TrackRunDataOffset       TrackRunFlags = 0x01
+	TrackRunFirstSampleFlags TrackRunFlags = 0x04
+	TrackRunSampleDuration   TrackRunFlags = 0x100
+	TrackRunSampleSize       TrackRunFlags = 0x200
+	TrackRunSampleFlags      TrackRunFlags = 0x400
+	TrackRunSampleCTS        TrackRunFlags = 0x800
 )
 
 func (a TrackFragRun) Marshal(b []byte) (n int) {
@@ -204,41 +210,41 @@ func (a TrackFragRun) Marshal(b []byte) (n int) {
 func (a TrackFragRun) marshal(b []byte) (n int) {
 	pio.PutU8(b[n:], a.Version)
 	n += 1
-	pio.PutU24BE(b[n:], a.Flags)
+	pio.PutU24BE(b[n:], uint32(a.Flags))
 	n += 3
 	pio.PutU32BE(b[n:], uint32(len(a.Entries)))
 	n += 4
-	if a.Flags&TRUN_DATA_OFFSET != 0 {
+	if a.Flags&TrackRunDataOffset != 0 {
 		{
 			pio.PutU32BE(b[n:], a.DataOffset)
 			n += 4
 		}
 	}
-	if a.Flags&TRUN_FIRST_SAMPLE_FLAGS != 0 {
+	if a.Flags&TrackRunFirstSampleFlags != 0 {
 		{
-			pio.PutU32BE(b[n:], a.FirstSampleFlags)
+			pio.PutU32BE(b[n:], uint32(a.FirstSampleFlags))
 			n += 4
 		}
 	}
 
 	for _, entry := range a.Entries {
-		if a.Flags&TRUN_SAMPLE_DURATION != 0 {
+		if a.Flags&TrackRunSampleDuration != 0 {
 			pio.PutU32BE(b[n:], entry.Duration)
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_SIZE != 0 {
+		if a.Flags&TrackRunSampleSize != 0 {
 			pio.PutU32BE(b[n:], entry.Size)
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_FLAGS != 0 {
-			pio.PutU32BE(b[n:], entry.Flags)
+		if a.Flags&TrackRunSampleFlags != 0 {
+			pio.PutU32BE(b[n:], uint32(entry.Flags))
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_CTS != 0 {
+		if a.Flags&TrackRunSampleCTS != 0 {
 			if a.Version > 0 {
-				pio.PutI32BE(b[:n], int32(entry.Cts))
+				pio.PutI32BE(b[:n], int32(entry.CTS))
 			} else {
-				pio.PutU32BE(b[n:], uint32(entry.Cts))
+				pio.PutU32BE(b[n:], uint32(entry.CTS))
 			}
 			n += 4
 		}
@@ -251,28 +257,28 @@ func (a TrackFragRun) Len() (n int) {
 	n += 1
 	n += 3
 	n += 4
-	if a.Flags&TRUN_DATA_OFFSET != 0 {
+	if a.Flags&TrackRunDataOffset != 0 {
 		{
 			n += 4
 		}
 	}
-	if a.Flags&TRUN_FIRST_SAMPLE_FLAGS != 0 {
+	if a.Flags&TrackRunFirstSampleFlags != 0 {
 		{
 			n += 4
 		}
 	}
 
 	for range a.Entries {
-		if a.Flags&TRUN_SAMPLE_DURATION != 0 {
+		if a.Flags&TrackRunSampleDuration != 0 {
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_SIZE != 0 {
+		if a.Flags&TrackRunSampleSize != 0 {
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_FLAGS != 0 {
+		if a.Flags&TrackRunSampleFlags != 0 {
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_CTS != 0 {
+		if a.Flags&TrackRunSampleCTS != 0 {
 			n += 4
 		}
 	}
@@ -292,13 +298,13 @@ func (a *TrackFragRun) Unmarshal(b []byte, offset int) (n int, err error) {
 		err = parseErr("Flags", n+offset, err)
 		return
 	}
-	a.Flags = pio.U24BE(b[n:])
+	a.Flags = TrackRunFlags(pio.U24BE(b[n:]))
 	n += 3
 	var _len_Entries uint32
 	_len_Entries = pio.U32BE(b[n:])
 	n += 4
 	a.Entries = make([]TrackFragRunEntry, _len_Entries)
-	if a.Flags&TRUN_DATA_OFFSET != 0 {
+	if a.Flags&TrackRunDataOffset != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("DataOffset", n+offset, err)
@@ -308,36 +314,36 @@ func (a *TrackFragRun) Unmarshal(b []byte, offset int) (n int, err error) {
 			n += 4
 		}
 	}
-	if a.Flags&TRUN_FIRST_SAMPLE_FLAGS != 0 {
+	if a.Flags&TrackRunFirstSampleFlags != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("FirstSampleFlags", n+offset, err)
 				return
 			}
-			a.FirstSampleFlags = pio.U32BE(b[n:])
+			a.FirstSampleFlags = SampleFlags(pio.U32BE(b[n:]))
 			n += 4
 		}
 	}
 
 	for i := 0; i < int(_len_Entries); i++ {
 		entry := &a.Entries[i]
-		if a.Flags&TRUN_SAMPLE_DURATION != 0 {
+		if a.Flags&TrackRunSampleDuration != 0 {
 			entry.Duration = pio.U32BE(b[n:])
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_SIZE != 0 {
+		if a.Flags&TrackRunSampleSize != 0 {
 			entry.Size = pio.U32BE(b[n:])
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_FLAGS != 0 {
-			entry.Flags = pio.U32BE(b[n:])
+		if a.Flags&TrackRunSampleFlags != 0 {
+			entry.Flags = SampleFlags(pio.U32BE(b[n:]))
 			n += 4
 		}
-		if a.Flags&TRUN_SAMPLE_CTS != 0 {
+		if a.Flags&TrackRunSampleCTS != 0 {
 			if a.Version > 0 {
-				entry.Cts = int64(pio.I32BE(b[n:]))
+				entry.CTS = int32(pio.I32BE(b[n:]))
 			} else {
-				entry.Cts = int64(pio.U32BE(b[n:]))
+				entry.CTS = int32(pio.U32BE(b[n:]))
 			}
 			n += 4
 		}
@@ -352,8 +358,8 @@ func (a TrackFragRun) Children() (r []Atom) {
 type TrackFragRunEntry struct {
 	Duration uint32
 	Size     uint32
-	Flags    uint32
-	Cts      int64
+	Flags    SampleFlags
+	CTS      int32
 }
 
 func (a TrackFragRun) Tag() Tag {
@@ -562,28 +568,34 @@ func (a TrackFragRun) String() string {
 	return fmt.Sprintf("dataoffset=%d", a.DataOffset)
 }
 
+// TFHD is the atom type for TrackFragHeader
 const TFHD = Tag(0x74666864)
 
+// TrackFragHeader atom
 type TrackFragHeader struct {
 	Version         uint8
-	Flags           uint32
+	Flags           TrackFragFlags
 	TrackID         uint32
 	BaseDataOffset  uint64
-	StsdId          uint32
+	StsdID          uint32
 	DefaultDuration uint32
 	DefaultSize     uint32
-	DefaultFlags    uint32
+	DefaultFlags    SampleFlags
 	AtomPos
 }
 
+// TrackFragFlags is the type of TrackFragHeader's Flags
+type TrackFragFlags uint32
+
+// Defined flags for TrackFragHeader
 const (
-	TFHD_BASE_DATA_OFFSET     = 0x01
-	TFHD_STSD_ID              = 0x02
-	TFHD_DEFAULT_DURATION     = 0x08
-	TFHD_DEFAULT_SIZE         = 0x10
-	TFHD_DEFAULT_FLAGS        = 0x20
-	TFHD_DURATION_IS_EMPTY    = 0x010000
-	TFHD_DEFAULT_BASE_IS_MOOF = 0x020000
+	TrackFragBaseDataOffset    TrackFragFlags = 0x01
+	TrackFragStsdID            TrackFragFlags = 0x02
+	TrackFragDefaultDuration   TrackFragFlags = 0x08
+	TrackFragDefaultSize       TrackFragFlags = 0x10
+	TrackFragDefaultFlags      TrackFragFlags = 0x20
+	TrackFragDurationIsEmpty   TrackFragFlags = 0x010000
+	TrackFragDefaultBaseIsMOOF TrackFragFlags = 0x020000
 )
 
 func (a TrackFragHeader) Marshal(b []byte) (n int) {
@@ -596,37 +608,37 @@ func (a TrackFragHeader) Marshal(b []byte) (n int) {
 func (a TrackFragHeader) marshal(b []byte) (n int) {
 	pio.PutU8(b[n:], a.Version)
 	n += 1
-	pio.PutU24BE(b[n:], a.Flags)
+	pio.PutU24BE(b[n:], uint32(a.Flags))
 	n += 3
 	pio.PutU32BE(b[n:], a.TrackID)
 	n += 4
-	if a.Flags&TFHD_BASE_DATA_OFFSET != 0 {
+	if a.Flags&TrackFragBaseDataOffset != 0 {
 		{
 			pio.PutU64BE(b[n:], a.BaseDataOffset)
 			n += 8
 		}
 	}
-	if a.Flags&TFHD_STSD_ID != 0 {
+	if a.Flags&TrackFragStsdID != 0 {
 		{
-			pio.PutU32BE(b[n:], a.StsdId)
+			pio.PutU32BE(b[n:], a.StsdID)
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_DURATION != 0 {
+	if a.Flags&TrackFragDefaultDuration != 0 {
 		{
 			pio.PutU32BE(b[n:], a.DefaultDuration)
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_SIZE != 0 {
+	if a.Flags&TrackFragDefaultSize != 0 {
 		{
 			pio.PutU32BE(b[n:], a.DefaultSize)
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_FLAGS != 0 {
+	if a.Flags&TrackFragDefaultFlags != 0 {
 		{
-			pio.PutU32BE(b[n:], a.DefaultFlags)
+			pio.PutU32BE(b[n:], uint32(a.DefaultFlags))
 			n += 4
 		}
 	}
@@ -638,27 +650,27 @@ func (a TrackFragHeader) Len() (n int) {
 	n += 1
 	n += 3
 	n += 4
-	if a.Flags&TFHD_BASE_DATA_OFFSET != 0 {
+	if a.Flags&TrackFragBaseDataOffset != 0 {
 		{
 			n += 8
 		}
 	}
-	if a.Flags&TFHD_STSD_ID != 0 {
+	if a.Flags&TrackFragStsdID != 0 {
 		{
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_DURATION != 0 {
+	if a.Flags&TrackFragDefaultDuration != 0 {
 		{
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_SIZE != 0 {
+	if a.Flags&TrackFragDefaultSize != 0 {
 		{
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_FLAGS != 0 {
+	if a.Flags&TrackFragDefaultFlags != 0 {
 		{
 			n += 4
 		}
@@ -679,7 +691,7 @@ func (a *TrackFragHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 		err = parseErr("Flags", n+offset, err)
 		return
 	}
-	a.Flags = pio.U24BE(b[n:])
+	a.Flags = TrackFragFlags(pio.U24BE(b[n:]))
 	n += 3
 	if len(b) < n+4 {
 		err = parseErr("TrackID", n+offset, err)
@@ -687,7 +699,7 @@ func (a *TrackFragHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 	}
 	a.TrackID = pio.U32BE(b[n:])
 	n += 4
-	if a.Flags&TFHD_BASE_DATA_OFFSET != 0 {
+	if a.Flags&TrackFragBaseDataOffset != 0 {
 		{
 			if len(b) < n+8 {
 				err = parseErr("BaseDataOffset", n+offset, err)
@@ -697,17 +709,17 @@ func (a *TrackFragHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 			n += 8
 		}
 	}
-	if a.Flags&TFHD_STSD_ID != 0 {
+	if a.Flags&TrackFragStsdID != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("StsdId", n+offset, err)
 				return
 			}
-			a.StsdId = pio.U32BE(b[n:])
+			a.StsdID = pio.U32BE(b[n:])
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_DURATION != 0 {
+	if a.Flags&TrackFragDefaultDuration != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("DefaultDuration", n+offset, err)
@@ -717,7 +729,7 @@ func (a *TrackFragHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_SIZE != 0 {
+	if a.Flags&TrackFragDefaultSize != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("DefaultSize", n+offset, err)
@@ -727,13 +739,13 @@ func (a *TrackFragHeader) Unmarshal(b []byte, offset int) (n int, err error) {
 			n += 4
 		}
 	}
-	if a.Flags&TFHD_DEFAULT_FLAGS != 0 {
+	if a.Flags&TrackFragDefaultFlags != 0 {
 		{
 			if len(b) < n+4 {
 				err = parseErr("DefaultFlags", n+offset, err)
 				return
 			}
-			a.DefaultFlags = pio.U32BE(b[n:])
+			a.DefaultFlags = SampleFlags(pio.U32BE(b[n:]))
 			n += 4
 		}
 	}

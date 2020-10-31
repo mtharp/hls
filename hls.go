@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"eaglesong.dev/hls/internal/fmp4"
 	"eaglesong.dev/hls/internal/tsfrag"
 	"github.com/nareix/joy4/av"
 )
@@ -63,11 +62,7 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		}
 	}
 	var err error
-	if p.FMP4 {
-		p.frag, err = fmp4.NewFragmenter(streams)
-	} else {
-		p.frag, err = tsfrag.New(streams)
-	}
+	p.frag, err = tsfrag.New(streams)
 	return err
 }
 
@@ -131,7 +126,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		p.presegs = p.presegs[:len(p.presegs)-1]
 	} else {
 		var err error
-		p.current, err = newSegment(p.segNum, p.WorkDir, p.FMP4)
+		p.current, err = newSegment(p.segNum, p.WorkDir)
 		if err != nil {
 			return err
 		}
@@ -148,16 +143,10 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	// build playlist
 	var b bytes.Buffer
 	ver := 3
-	if p.FMP4 {
-		ver = 6
-	}
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", ver, int(initialDur.Seconds()))
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
 	if p.dcnseq != 0 {
 		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
-	}
-	if p.FMP4 {
-		b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	}
 	segments := make([]*segment, len(p.segments)+len(p.presegs))
 	copy(segments, p.segments)
@@ -169,7 +158,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	p.state.Store(hlsState{b.Bytes(), segments})
 	// precreate next segment
 	for len(p.presegs) < p.Precreate {
-		s, err := newSegment(p.segNum, p.WorkDir, p.FMP4)
+		s, err := newSegment(p.segNum, p.WorkDir)
 		if err != nil {
 			return err
 		}

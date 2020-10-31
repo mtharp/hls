@@ -32,15 +32,10 @@ type segment struct {
 }
 
 // create a new live segment
-func newSegment(segNum int64, workDir string, fmp4 bool) (*segment, error) {
+func newSegment(segNum int64, workDir string) (*segment, error) {
 	s := &segment{name: strconv.FormatInt(segNum, 36)}
-	if fmp4 {
-		s.name += ".m4s"
-		s.mime = "video/iso.segment"
-	} else {
-		s.name += ".ts"
-		s.mime = "video/MP2T"
-	}
+	s.name += ".ts"
+	s.mime = "video/MP2T"
 	s.cond.L = &s.mu
 	var err error
 	s.f, err = ioutil.TempFile(workDir, s.name)
