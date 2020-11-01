@@ -34,8 +34,8 @@ type segment struct {
 // create a new live segment
 func newSegment(segNum int64, workDir string) (*segment, error) {
 	s := &segment{name: strconv.FormatInt(segNum, 36)}
-	s.name += ".ts"
-	s.mime = "video/MP2T"
+	s.name += ".m4s"
+	s.mime = "video/iso.segment"
 	s.cond.L = &s.mu
 	var err error
 	s.f, err = ioutil.TempFile(workDir, s.name)
@@ -92,13 +92,14 @@ func (s *segment) Release() {
 }
 
 // m3u8 fragment for this segment
-func (s *segment) Format(prefetch bool) string {
+func (s *segment) Format() string {
 	var formatted, pf string
-	if s.final || !prefetch {
+	if s.final {
 		formatted = fmt.Sprintf("#EXTINF:%.03f,live\n%s\n", s.dur.Seconds(), s.name)
 	} else {
-		formatted = fmt.Sprintf("#EXT-X-PREFETCH:%s\n", s.name)
-		pf = "-PREFETCH"
+		return ""
+		// formatted = fmt.Sprintf("#EXT-X-PREFETCH:%s\n", s.name)
+		// pf = "-PREFETCH"
 	}
 	if s.ptime != "" {
 		formatted = "#EXT-X" + pf + "-PROGRAM-DATE-TIME:" + s.ptime + "\n" + formatted

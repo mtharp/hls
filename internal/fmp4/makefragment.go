@@ -2,17 +2,23 @@ package fmp4
 
 import (
 	"io"
-	"math/bits"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"eaglesong.dev/hls/internal/timescale"
+	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/utils/bits/pio"
 )
 
-// WriteTo serializes previously stored samples as a movie fragment and writes it to w.
-// The most-recently written sample will be held back in order to establish timing between samples.
-// This can be called periodically within a segment and SHOULD be called immediately after each keyframe regardless of whether it is starting a new segment.
-func (f *Fragmenter) WriteTo(w io.Writer) (int64, error) {
+type fragmentWithData struct {
+	trackFrag *fmp4io.TrackFrag
+	packets   []av.Packet
+}
+
+func (f *TrackFragmenter) makeFragment() fragmentWithData {
+	if len(f.pending) < 2 {
+		return fragmentWithData{}
+	}
+	entryCount := len(f.pending) - 1
 	// timescale for first packet
 	startTime := f.pending[0].Time
 	startDTS := timescale.ToScale(startTime, f.timeScale)
@@ -32,18 +38,14 @@ func (f *Fragmenter) WriteTo(w io.Writer) (int64, error) {
 		},
 		Run: &fmp4io.TrackFragRun{
 			Flags:   fmp4io.TrackRunDataOffset,
-			Entries: f.ebuf[:0],
+			Entries: make([]fmp4io.TrackFragRunEntry, entryCount),
 		},
 	}
 	// add samples to the fragment run
 	curDTS := startDTS
-	var mdatLen int
-	for i, pkt := range f.pending {
+	for i, pkt := range f.pending[:entryCount] {
 		// calculate the absolute DTS of the next sample and use the difference as the duration
-		nextTime := f.tail.Time
-		if j := i + 1; j < len(f.pending) {
-			nextTime = f.pending[j].Time
-		}
+		nextTime := f.pending[i+1].Time
 		nextDTS := timescale.ToScale(nextTime, f.timeScale)
 		entry := fmp4io.TrackFragRunEntry{
 			Duration: uint32(nextDTS - curDTS),
@@ -85,15 +87,10 @@ func (f *Fragmenter) WriteTo(w io.Writer) (int64, error) {
 			}
 			entry.CTS = relCTS
 		}
-		// log.Printf("%3d %d -> %d = %d  %s -> %s = %s  comp %s %d", f.trackID, curDTS, nextDTS, dur, pkt.Time, nextTime, nextTime-pkt.Time, pkt.CompositionTime, track.Run.Entries[i].Cts)
+		// log.Printf("%3d %d -> %d = %d  %s -> %s = %s  comp %s %d", f.trackID, curDTS, nextDTS, nextDTS-curDTS, pkt.Time, nextTime, nextTime-pkt.Time, pkt.CompositionTime, entry.CTS)
 		curDTS = nextDTS
-		mdatLen += len(pkt.Data)
-		track.Run.Entries = append(track.Run.Entries, entry)
+		track.Run.Entries[i] = entry
 	}
-	return f.marshal(w, track, mdatLen)
-}
-
-func (f *Fragmenter) marshal(w io.Writer, track *fmp4io.TrackFrag, mdatLen int) (int64, error) {
 	if track.Header.DefaultSize != 0 {
 		// all samples are the same size
 		track.Header.Flags |= fmp4io.TrackFragDefaultSize
@@ -116,37 +113,50 @@ func (f *Fragmenter) marshal(w io.Writer, track *fmp4io.TrackFrag, mdatLen int) 
 	} else {
 		track.Run.Flags |= fmp4io.TrackRunSampleFlags
 	}
-	// marshal fragment
+	d := fragmentWithData{
+		trackFrag: track,
+		packets:   f.pending[:entryCount],
+	}
+	f.pending = []av.Packet{f.pending[entryCount]}
+	return d
+}
+
+func writeFragment(w io.Writer, tracks []fragmentWithData, seqNum uint32) error {
+	// fill out fragment header
 	moof := &fmp4io.MovieFrag{
 		Header: &fmp4io.MovieFragHeader{
-			Seqnum: f.seqNum,
+			Seqnum: seqNum,
 		},
-		Tracks: []*fmp4io.TrackFrag{track},
+		Tracks: make([]*fmp4io.TrackFrag, len(tracks)),
 	}
-	f.seqNum++
-	dataOffset := moof.Len() + 8
-	moof.Tracks[0].Run.DataOffset = uint32(dataOffset)
-	totalLen := dataOffset + mdatLen
-	if cap(f.mbuf) < totalLen {
-		// round to next power of 2
-		allocLen := 1 << bits.Len(uint(totalLen-1))
-		f.mbuf = make([]byte, 0, allocLen)
+	for i, track := range tracks {
+		moof.Tracks[i] = track.trackFrag
 	}
-	b := f.mbuf[0:totalLen]
-	n := moof.Marshal(b)
-	pio.PutU32BE(b[n:], uint32(8+mdatLen))
-	n += 4
-	pio.PutU32BE(b[n:], uint32(fmp4io.MDAT))
-	n += 4
-	for _, pkt := range f.pending {
-		copy(b[n:], pkt.Data)
-		n += len(pkt.Data)
+	// calculate track data offsets relative to the start of the MOOF
+	dataBase := moof.Len() + 8 // MOOF plus the MDAT header
+	dataOffset := dataBase
+	for i, track := range tracks {
+		moof.Tracks[i].Run.DataOffset = uint32(dataOffset)
+		for _, pkt := range track.packets {
+			dataOffset += len(pkt.Data)
+		}
 	}
-	f.pending = f.pending[:0]
-	f.ebuf = track.Run.Entries[:0]
-	wrote, err := w.Write(b)
-	if err == nil && wrote != totalLen {
-		err = io.ErrShortWrite
+	// marshal MOOF and MDAT header
+	b := make([]byte, dataBase)
+	moof.Marshal(b)
+	pio.PutU32BE(b[dataBase-8:], uint32(dataOffset-dataBase+8))
+	pio.PutU32BE(b[dataBase-4:], uint32(fmp4io.MDAT))
+	if _, err := w.Write(b); err != nil {
+		return err
 	}
-	return int64(wrote), err
+	// write MDAT contents
+	for i, track := range tracks {
+		moof.Tracks[i].Run.DataOffset = uint32(dataOffset)
+		for _, pkt := range track.packets {
+			if _, err := w.Write(pkt.Data); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

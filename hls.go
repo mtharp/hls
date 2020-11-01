@@ -3,33 +3,39 @@ package hls
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"sync/atomic"
 	"time"
 
-	"eaglesong.dev/hls/internal/tsfrag"
+	"eaglesong.dev/hls/internal/fmp4"
 	"github.com/nareix/joy4/av"
+)
+
+const (
+	defaultFragmentLength  = 200 * time.Millisecond
+	defaultInitialDuration = 5 * time.Second
+	defaultBufferLength    = 60 * time.Second
+	slopOffset             = time.Millisecond
 )
 
 // Publisher implements a live HLS stream server
 type Publisher struct {
-	// InitialDuration is a guess for the TARGETDURATION field in the playlist, used until the first segment is complete
+	// InitialDuration is a guess for the TARGETDURATION field in the playlist,
+	// used until the first segment is complete. Defaults to 5s.
 	InitialDuration time.Duration
 	// BufferLength is the approximate duration spanned by all the segments in the playlist. Old segments are removed until the playlist length is less than this value.
 	BufferLength time.Duration
+	// FragmentLength is the size of MP4 fragments to break each segment into. Defaults to 200ms.
+	FragmentLength time.Duration
 	// WorkDir is a temporary storage location for segments. Can be empty, in which case the default system temp dir is used.
 	WorkDir string
 	// Prefetch indicates that low-latency HLS (LHLS) tags should be used
 	// https://github.com/video-dev/hlsjs-rfcs/blob/a6e7cc44294b83a7dba8c4f45df6d80c4bd13955/proposals/0001-lhls.md
 	Prefetch  bool
 	Precreate int
-	// FMP4 enables use of Fragmented MP4 segments instead of the traditional MPEG2-TS
-	FMP4 bool
 
 	segments []*segment
-	presegs  []*segment
 	segNum   int64
 	seq      int64
 	dcn      bool
@@ -38,14 +44,7 @@ type Publisher struct {
 
 	vidx    int
 	current *segment
-	frag    fragmenter
-}
-
-type fragmenter interface {
-	av.PacketWriter
-	SetWriter(io.Writer) error
-	Flush(time.Duration) error
-	FileHeader() []byte
+	frag    *fmp4.MovieFragmenter
 }
 
 // lock-free snapshot of HLS state for readers
@@ -62,7 +61,7 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		}
 	}
 	var err error
-	p.frag, err = tsfrag.New(streams)
+	p.frag, err = fmp4.NewMovie(streams)
 	return err
 }
 
@@ -83,18 +82,32 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 	return p.WriteExtendedPacket(ExtendedPacket{Packet: pkt})
 }
 
-// WriteExtendedPacket publishes a packetw ith additional metadata
+// WriteExtendedPacket publishes a packet with additional metadata
 func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
-	if pkt.IsKeyFrame && int(pkt.Idx) == p.vidx {
-		if err := p.newSegment(pkt.Time, pkt.ProgramTime); err != nil {
+	// enqueue packet to fragmenter
+	if p.current != nil {
+		if err := p.frag.WritePacket(pkt.Packet); err != nil {
 			return err
 		}
 	}
-	if p.current == nil {
-		// waiting for first keyframe
+	if int(pkt.Idx) != p.vidx {
 		return nil
 	}
-	return p.frag.WritePacket(pkt.Packet)
+	fragLen := p.FragmentLength
+	if fragLen == 0 {
+		fragLen = defaultFragmentLength
+	}
+	switch {
+	case pkt.IsKeyFrame:
+		// the fragmenter retains the last packet in order to calculate the
+		// duration of the previous frame. so switching segments here will put
+		// this keyframe into the new segment.
+		return p.newSegment(pkt.Time, pkt.ProgramTime)
+	case p.current != nil && p.frag.Duration() >= fragLen-slopOffset:
+		// flush fragments periodically
+		return p.frag.Flush()
+	}
+	return nil
 }
 
 // Discontinuity inserts a marker into the playlist before the next segment indicating that the decoder should be reset
@@ -104,13 +117,6 @@ func (p *Publisher) Discontinuity() {
 
 // start a new segment
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
-	if p.current != nil {
-		// complete the previous segment
-		if err := p.frag.Flush(start); err != nil {
-			return err
-		}
-		p.current.Finalize(start)
-	}
 	var ptFormatted string
 	if !programTime.IsZero() {
 		ptFormatted = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
@@ -119,58 +125,34 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	if p.segNum == 0 {
 		p.segNum = time.Now().UnixNano()
 	}
-	if len(p.presegs) != 0 {
-		// use a precreated segment
-		p.current = p.presegs[0]
-		copy(p.presegs, p.presegs[1:])
-		p.presegs = p.presegs[:len(p.presegs)-1]
-	} else {
-		var err error
-		p.current, err = newSegment(p.segNum, p.WorkDir)
-		if err != nil {
-			return err
-		}
+	previous := p.current
+	var err error
+	p.current, err = newSegment(p.segNum, p.WorkDir)
+	if err != nil {
+		return err
 	}
 	p.current.activate(start, initialDur, p.dcn, ptFormatted)
 	p.dcn = false
 	p.segNum++
+	// switch fragmenter to new segment, flushing everything up to but not
+	// including the keyframe to the previous one
 	if err := p.frag.SetWriter(p.current); err != nil {
 		return err
+	}
+	if previous != nil {
+		// finalize the previous segment with its real duration
+		previous.Finalize(start)
 	}
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
-	// build playlist
-	var b bytes.Buffer
-	ver := 3
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", ver, int(initialDur.Seconds()))
-	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
-	if p.dcnseq != 0 {
-		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
-	}
-	segments := make([]*segment, len(p.segments)+len(p.presegs))
-	copy(segments, p.segments)
-	copy(segments[len(p.segments):], p.presegs)
-	for _, chunk := range segments {
-		b.WriteString(chunk.Format(p.Prefetch))
-	}
-	// publish a snapshot of the segment list
-	p.state.Store(hlsState{b.Bytes(), segments})
-	// precreate next segment
-	for len(p.presegs) < p.Precreate {
-		s, err := newSegment(p.segNum, p.WorkDir)
-		if err != nil {
-			return err
-		}
-		p.presegs = append(p.presegs, s)
-		p.segNum++
-	}
+	p.snapshot(initialDur)
 	return nil
 }
 
 // calculate the longest segment duration
 func (p *Publisher) targetDuration() time.Duration {
-	var maxTime time.Duration
+	maxTime := p.frag.Duration() // pending segment duration
 	for _, chunk := range p.segments {
 		if chunk.dur > maxTime {
 			maxTime = chunk.dur
@@ -181,7 +163,7 @@ func (p *Publisher) targetDuration() time.Duration {
 		maxTime = p.InitialDuration
 	}
 	if maxTime == 0 {
-		maxTime = 5 * time.Second
+		maxTime = defaultInitialDuration
 	}
 	return maxTime
 }
@@ -190,7 +172,7 @@ func (p *Publisher) targetDuration() time.Duration {
 func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	goalLen := p.BufferLength
 	if goalLen == 0 {
-		goalLen = 60 * time.Second
+		goalLen = defaultBufferLength
 	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
 	if keepSegments < 10 {
@@ -210,6 +192,23 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	p.segments = p.segments[n:]
 }
 
+// build playlist and publish a lock-free snapshot of segments
+func (p *Publisher) snapshot(initialDur time.Duration) {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
+	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
+	if p.dcnseq != 0 {
+		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
+	}
+	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
+	segments := make([]*segment, len(p.segments))
+	copy(segments, p.segments)
+	for _, chunk := range segments {
+		b.WriteString(chunk.Format())
+	}
+	p.state.Store(hlsState{b.Bytes(), segments})
+}
+
 // serve the HLS playlist and segments
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	state, ok := p.state.Load().(hlsState)
@@ -224,11 +223,9 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.Write(state.playlist)
 		return
 	case "init.mp4":
-		if b := p.frag.FileHeader(); len(b) != 0 {
-			rw.Header().Set("Content-Type", "video/mp4")
-			rw.Write(b)
-			return
-		}
+		rw.Header().Set("Content-Type", "video/mp4")
+		rw.Write(p.frag.MovieHeader())
+		return
 	}
 	for _, chunk := range state.segments {
 		if chunk.name == bn {
@@ -247,8 +244,4 @@ func (p *Publisher) Close() {
 		seg.Release()
 	}
 	p.segments = nil
-	for _, seg := range p.presegs {
-		seg.Release()
-	}
-	p.presegs = nil
 }

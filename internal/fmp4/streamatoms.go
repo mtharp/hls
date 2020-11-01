@@ -11,7 +11,8 @@ import (
 	"github.com/nareix/joy4/codec/opusparser"
 )
 
-func (f *Fragmenter) setAtoms() error {
+// Track creates a TRAK atom for this stream
+func (f *TrackFragmenter) Track() (*fmp4io.Track, error) {
 	sample := &fmp4io.SampleTable{
 		SampleDesc:    &fmp4io.SampleDesc{},
 		TimeToSample:  &fmp4io.TimeToSample{},
@@ -37,7 +38,7 @@ func (f *Fragmenter) setAtoms() error {
 		f.timeScale = 48000
 		dc, err := esio.DecoderConfigFromCodecData(cd)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("decoding AAC configuration: %w", err)
 		}
 		sample.SampleDesc.MP4ADesc = &fmp4io.MP4ADesc{
 			DataRefIdx:       1,
@@ -65,7 +66,7 @@ func (f *Fragmenter) setAtoms() error {
 			},
 		}
 	default:
-		return fmt.Errorf("mp4: codec type=%v is not supported", f.codecData.Type())
+		return nil, fmt.Errorf("mp4: codec type=%v is not supported", f.codecData.Type())
 	}
 	trackAtom := &fmp4io.Track{
 		Header: &fmp4io.TrackHeader{
@@ -110,6 +111,11 @@ func (f *Fragmenter) setAtoms() error {
 		}
 		trackAtom.Media.Info.Sound = &fmp4io.SoundMediaInfo{}
 	}
+	return trackAtom, nil
+}
+
+// MovieHeader marshals an init.mp4 for the given tracks
+func MovieHeader(tracks []*fmp4io.Track) ([]byte, error) {
 	ftyp := fmp4io.FileType{
 		MajorBrand: 0x69736f36, // iso6
 		CompatibleBrands: []uint32{
@@ -122,29 +128,32 @@ func (f *Fragmenter) setAtoms() error {
 			PreferredRate:   1,
 			PreferredVolume: 1,
 			Matrix:          [9]int32{0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000},
-			NextTrackID:     2,
 			TimeScale:       1000,
 		},
-		Tracks: []*fmp4io.Track{trackAtom},
-		MovieExtend: &fmp4io.MovieExtend{
-			Tracks: []*fmp4io.TrackExtend{
-				{
-					TrackID:              f.trackID,
-					DefaultSampleDescIdx: 1,
-				},
-			},
-		},
+		Tracks:      tracks,
+		MovieExtend: &fmp4io.MovieExtend{},
+	}
+	for _, track := range tracks {
+		if track.Header.TrackID >= moov.Header.NextTrackID {
+			moov.Header.NextTrackID = track.Header.TrackID + 1
+		}
+		moov.MovieExtend.Tracks = append(moov.MovieExtend.Tracks,
+			&fmp4io.TrackExtend{TrackID: track.Header.TrackID, DefaultSampleDescIdx: 1})
 	}
 	// marshal init segment
-	f.fhdr = make([]byte, ftyp.Len()+moov.Len())
-	n := ftyp.Marshal(f.fhdr)
-	moov.Marshal(f.fhdr[n:])
-	// marshal segment header
+	fhdr := make([]byte, ftyp.Len()+moov.Len())
+	n := ftyp.Marshal(fhdr)
+	moov.Marshal(fhdr[n:])
+	return fhdr, nil
+}
+
+// FragmentHeader returns the header needed for the beginning of a MP4 segment file
+func FragmentHeader() []byte {
 	styp := fmp4io.SegmentType{
 		MajorBrand:       0x6d736468,           // msdh
 		CompatibleBrands: []uint32{0x6d736978}, // msix
 	}
-	f.shdr = make([]byte, styp.Len())
-	styp.Marshal(f.shdr)
-	return nil
+	shdr := make([]byte, styp.Len())
+	styp.Marshal(shdr)
+	return shdr
 }
