@@ -1,7 +1,7 @@
 package fmp4
 
 import (
-	"io"
+	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"eaglesong.dev/hls/internal/timescale"
@@ -10,8 +10,9 @@ import (
 )
 
 type fragmentWithData struct {
-	trackFrag *fmp4io.TrackFrag
-	packets   []av.Packet
+	trackFrag   *fmp4io.TrackFrag
+	packets     []av.Packet
+	independent bool
 }
 
 func (f *TrackFragmenter) makeFragment() fragmentWithData {
@@ -114,14 +115,22 @@ func (f *TrackFragmenter) makeFragment() fragmentWithData {
 		track.Run.Flags |= fmp4io.TrackRunSampleFlags
 	}
 	d := fragmentWithData{
-		trackFrag: track,
-		packets:   f.pending[:entryCount],
+		trackFrag:   track,
+		packets:     f.pending[:entryCount],
+		independent: track.Run.FirstSampleFlags&fmp4io.SampleNoDependencies != 0,
 	}
 	f.pending = []av.Packet{f.pending[entryCount]}
 	return d
 }
 
-func writeFragment(w io.Writer, tracks []fragmentWithData, seqNum uint32) error {
+type RawFragment struct {
+	Bytes       []byte
+	Length      int
+	Independent bool
+	Duration    time.Duration
+}
+
+func marshalFragment(tracks []fragmentWithData, seqNum uint32, initial bool) RawFragment {
 	// fill out fragment header
 	moof := &fmp4io.MovieFrag{
 		Header: &fmp4io.MovieFragHeader{
@@ -129,8 +138,12 @@ func writeFragment(w io.Writer, tracks []fragmentWithData, seqNum uint32) error 
 		},
 		Tracks: make([]*fmp4io.TrackFrag, len(tracks)),
 	}
+	independent := true
 	for i, track := range tracks {
 		moof.Tracks[i] = track.trackFrag
+		if !track.independent {
+			independent = false
+		}
 	}
 	// calculate track data offsets relative to the start of the MOOF
 	dataBase := moof.Len() + 8 // MOOF plus the MDAT header
@@ -142,21 +155,32 @@ func writeFragment(w io.Writer, tracks []fragmentWithData, seqNum uint32) error 
 		}
 	}
 	// marshal MOOF and MDAT header
-	b := make([]byte, dataBase)
-	moof.Marshal(b)
-	pio.PutU32BE(b[dataBase-8:], uint32(dataOffset-dataBase+8))
-	pio.PutU32BE(b[dataBase-4:], uint32(fmp4io.MDAT))
-	if _, err := w.Write(b); err != nil {
-		return err
+	var shdrSize int
+	if initial {
+		shdrOnce.Do(func() {
+			shdr = FragmentHeader()
+		})
+		shdrSize = len(shdr)
 	}
+	b := make([]byte, shdrSize+dataBase, shdrSize+dataOffset)
+	var n int
+	if initial {
+		copy(b, shdr)
+		n = len(shdr)
+	}
+	n += moof.Marshal(b[n:])
+	pio.PutU32BE(b[n:], uint32(dataOffset-dataBase+8))
+	pio.PutU32BE(b[n+4:], uint32(fmp4io.MDAT))
 	// write MDAT contents
 	for i, track := range tracks {
 		moof.Tracks[i].Run.DataOffset = uint32(dataOffset)
 		for _, pkt := range track.packets {
-			if _, err := w.Write(pkt.Data); err != nil {
-				return err
-			}
+			b = append(b, pkt.Data...)
 		}
 	}
-	return nil
+	return RawFragment{
+		Bytes:       b,
+		Length:      len(b),
+		Independent: independent,
+	}
 }

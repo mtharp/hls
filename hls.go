@@ -1,10 +1,9 @@
 package hls
 
 import (
-	"bytes"
-	"fmt"
 	"net/http"
 	"path"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,20 +36,17 @@ type Publisher struct {
 
 	segments []*segment
 	segNum   int64
-	seq      int64
-	dcn      bool
-	dcnseq   int64
+	baseMSN  int
+	baseDCN  int
+	nextDCN  bool
 	state    atomic.Value
+
+	subsMu sync.Mutex
+	subs   subMap
 
 	vidx    int
 	current *segment
 	frag    *fmp4.MovieFragmenter
-}
-
-// lock-free snapshot of HLS state for readers
-type hlsState struct {
-	playlist []byte
-	segments []*segment
 }
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
@@ -97,52 +93,44 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	if fragLen == 0 {
 		fragLen = defaultFragmentLength
 	}
-	switch {
-	case pkt.IsKeyFrame:
+	if pkt.IsKeyFrame {
 		// the fragmenter retains the last packet in order to calculate the
 		// duration of the previous frame. so switching segments here will put
 		// this keyframe into the new segment.
 		return p.newSegment(pkt.Time, pkt.ProgramTime)
-	case p.current != nil && p.frag.Duration() >= fragLen-slopOffset:
+	} else if p.current != nil && p.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically
-		return p.frag.Flush()
+		p.current.Append(p.frag.Fragment())
+		p.snapshot(0)
 	}
 	return nil
 }
 
 // Discontinuity inserts a marker into the playlist before the next segment indicating that the decoder should be reset
 func (p *Publisher) Discontinuity() {
-	p.dcn = true
+	p.nextDCN = true
 }
 
 // start a new segment
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
-	var ptFormatted string
-	if !programTime.IsZero() {
-		ptFormatted = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+	if p.current != nil {
+		// flush and finalize previous segment
+		p.current.Append(p.frag.Fragment())
+		p.current.Finalize(start)
 	}
+	p.frag.NewSegment()
 	initialDur := p.targetDuration()
 	if p.segNum == 0 {
 		p.segNum = time.Now().UnixNano()
 	}
-	previous := p.current
 	var err error
 	p.current, err = newSegment(p.segNum, p.WorkDir)
 	if err != nil {
 		return err
 	}
-	p.current.activate(start, initialDur, p.dcn, ptFormatted)
-	p.dcn = false
+	p.current.activate(start, initialDur, p.nextDCN, programTime)
+	p.nextDCN = false
 	p.segNum++
-	// switch fragmenter to new segment, flushing everything up to but not
-	// including the keyframe to the previous one
-	if err := p.frag.SetWriter(p.current); err != nil {
-		return err
-	}
-	if previous != nil {
-		// finalize the previous segment with its real duration
-		previous.Finalize(start)
-	}
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -183,30 +171,13 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 		return
 	}
 	for _, seg := range p.segments[:n] {
-		p.seq++
+		p.baseMSN++
 		if seg.dcn {
-			p.dcnseq++
+			p.baseDCN++
 		}
 		seg.Release()
 	}
 	p.segments = p.segments[n:]
-}
-
-// build playlist and publish a lock-free snapshot of segments
-func (p *Publisher) snapshot(initialDur time.Duration) {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
-	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.seq)
-	if p.dcnseq != 0 {
-		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.dcnseq)
-	}
-	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
-	segments := make([]*segment, len(p.segments))
-	copy(segments, p.segments)
-	for _, chunk := range segments {
-		b.WriteString(chunk.Format())
-	}
-	p.state.Store(hlsState{b.Bytes(), segments})
 }
 
 // serve the HLS playlist and segments
@@ -219,21 +190,23 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	bn := path.Base(req.URL.Path)
 	switch bn {
 	case "index.m3u8":
-		rw.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		rw.Write(state.playlist)
+		state.servePlaylist(rw, req, p.waitForSegment)
 		return
 	case "init.mp4":
 		rw.Header().Set("Content-Type", "video/mp4")
 		rw.Write(p.frag.MovieHeader())
 		return
 	}
-	for _, chunk := range state.segments {
-		if chunk.name == bn {
-			chunk.serveHTTP(rw, req)
+	num, part, ok := parseFilename(bn)
+	if ok {
+		idx := num - state.segments[0].num
+		if idx >= 0 && idx < int64(len(state.segments)) {
+			state.segments[idx].serveHTTP(rw, req, int(part))
 			return
 		}
 	}
 	http.NotFound(rw, req)
+	return
 }
 
 // Close frees resources associated with the publisher

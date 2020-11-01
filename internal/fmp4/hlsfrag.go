@@ -1,31 +1,33 @@
 package fmp4
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
+	"sync"
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"github.com/nareix/joy4/av"
 )
 
+var (
+	shdrOnce sync.Once
+	shdr     []byte
+)
+
 // MovieFragmenter breaks a stream into segments each containing both tracks from the original stream
 type MovieFragmenter struct {
 	tracks []*TrackFragmenter
 	fhdr   []byte
-	shdr   []byte
-	buf    *bufio.Writer
 	vidx   int
 	seqNum uint32
+	shdrw  bool
 }
 
 // NewMovie creates a movie fragmenter from a stream
 func NewMovie(streams []av.CodecData) (*MovieFragmenter, error) {
 	f := &MovieFragmenter{
 		tracks: make([]*TrackFragmenter, len(streams)),
-		shdr:   FragmentHeader(),
 		vidx:   -1,
 	}
 	atoms := make([]*fmp4io.Track, len(streams))
@@ -53,27 +55,9 @@ func NewMovie(streams []av.CodecData) (*MovieFragmenter, error) {
 	return f, err
 }
 
-// SetWriter starts writing a new segment to w, flushing the previous one if appropriate
-func (f *MovieFragmenter) SetWriter(w io.Writer) error {
-	if f.buf != nil {
-		if err := f.Flush(); err != nil {
-			return err
-		}
-	}
-	if f.buf == nil {
-		f.buf = bufio.NewWriterSize(w, 65536)
-	} else {
-		f.buf.Reset(w)
-	}
-	_, err := w.Write(f.shdr)
-	return err
-}
-
-// Flush writes pending packets to the current writer
-func (f *MovieFragmenter) Flush() error {
-	if f.buf == nil {
-		return errors.New("output is not set")
-	}
+// Fragment produces a fragment out of the currently-queued packets.
+func (f *MovieFragmenter) Fragment() RawFragment {
+	dur := f.tracks[f.vidx].Duration()
 	var tracks []fragmentWithData
 	for _, track := range f.tracks {
 		tf := track.makeFragment()
@@ -82,10 +66,11 @@ func (f *MovieFragmenter) Flush() error {
 		}
 	}
 	f.seqNum++
-	if err := writeFragment(f.buf, tracks, f.seqNum); err != nil {
-		return err
-	}
-	return f.buf.Flush()
+	initial := !f.shdrw
+	f.shdrw = true
+	frag := marshalFragment(tracks, f.seqNum, initial)
+	frag.Duration = dur
+	return frag
 }
 
 // WritePacket formats and queues a packet for the next fragment to be written
@@ -101,4 +86,10 @@ func (f *MovieFragmenter) Duration() time.Duration {
 // MovieHeader marshals an init.mp4 for the fragmenter's tracks
 func (f *MovieFragmenter) MovieHeader() []byte {
 	return f.fhdr
+}
+
+// NewSegment indicates that a new segment has begun and  the next call to
+// Fragment() should include a leading FTYP header
+func (f *MovieFragmenter) NewSegment() {
+	f.shdrw = false
 }

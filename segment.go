@@ -1,27 +1,28 @@
 package hls
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"eaglesong.dev/hls/internal/fmp4"
 )
 
 type segment struct {
 	// live
-	mu     sync.Mutex
-	cond   sync.Cond
-	chunks [][]byte
-	views  uintptr
+	mu    sync.Mutex
+	parts []fmp4.RawFragment
 	// fixed at creation
 	start time.Duration
+	num   int64
 	name  string
-	mime  string
 	dcn   bool
 	ptime string
 	// finalized
@@ -33,10 +34,10 @@ type segment struct {
 
 // create a new live segment
 func newSegment(segNum int64, workDir string) (*segment, error) {
-	s := &segment{name: strconv.FormatInt(segNum, 36)}
-	s.name += ".m4s"
-	s.mime = "video/iso.segment"
-	s.cond.L = &s.mu
+	s := &segment{
+		name: strconv.FormatInt(segNum, 36),
+		num:  segNum,
+	}
 	var err error
 	s.f, err = ioutil.TempFile(workDir, s.name)
 	if err != nil {
@@ -46,27 +47,51 @@ func newSegment(segNum int64, workDir string) (*segment, error) {
 	return s, nil
 }
 
-func (s *segment) activate(start, initialDur time.Duration, dcn bool, programTime string) {
+func parseFilename(name string) (num, part int64, ok bool) {
+	parts := strings.Split(name, ".")
+	if len(parts) < 2 || len(parts) > 3 || parts[len(parts)-1] != "m4s" {
+		return
+	}
+	num, err := strconv.ParseInt(parts[0], 36, 64)
+	if err != nil {
+		return
+	}
+	if len(parts) == 3 {
+		part, err = strconv.ParseInt(parts[1], 10, 0)
+		if err != nil {
+			return
+		}
+	} else {
+		part = -1
+	}
+	ok = true
+	return
+}
+
+func (s *segment) activate(start, initialDur time.Duration, dcn bool, programTime time.Time) {
 	s.start = start
 	s.dur = initialDur
 	s.dcn = dcn
-	s.ptime = programTime
+	if !programTime.IsZero() {
+		s.ptime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+	}
 }
 
-// add bytes to the end of a live segment
-func (s *segment) Write(d []byte) (int, error) {
-	if len(d) == 0 {
-		return 0, nil
-	}
-	buf := make([]byte, len(d))
-	copy(buf, d)
-
+// Append a complete fragment to the segment. The buffer must not be modified afterwards.
+func (s *segment) Append(frag fmp4.RawFragment) error {
 	s.mu.Lock()
-	s.chunks = append(s.chunks, buf)
-	s.size += int64(len(buf))
+	s.parts = append(s.parts, frag)
+	s.size += int64(frag.Length)
 	s.mu.Unlock()
-	s.cond.Broadcast()
-	return s.f.Write(d)
+	_, err := s.f.Write(frag.Bytes)
+	return err
+}
+
+// Parts returns a snapshot of the segment's partial fragments
+func (s *segment) Parts() []fmp4.RawFragment {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.parts
 }
 
 // finalize a live segment
@@ -77,9 +102,12 @@ func (s *segment) Finalize(nextSegment time.Duration) {
 	}
 	s.mu.Lock()
 	s.final = true
-	s.chunks = nil
+	// discard individual part buffers. the size is retained so they can still
+	// be served from the finalized file.
+	for i := range s.parts {
+		s.parts[i].Bytes = nil
+	}
 	s.mu.Unlock()
-	s.cond.Broadcast()
 }
 
 // free resources associated with the segment
@@ -92,73 +120,69 @@ func (s *segment) Release() {
 }
 
 // m3u8 fragment for this segment
-func (s *segment) Format() string {
-	var formatted, pf string
-	if s.final {
-		formatted = fmt.Sprintf("#EXTINF:%.03f,live\n%s\n", s.dur.Seconds(), s.name)
-	} else {
-		return ""
-		// formatted = fmt.Sprintf("#EXT-X-PREFETCH:%s\n", s.name)
-		// pf = "-PREFETCH"
-	}
+func (s *segment) Format(b *bytes.Buffer, parts bool) {
 	if s.ptime != "" {
-		formatted = "#EXT-X" + pf + "-PROGRAM-DATE-TIME:" + s.ptime + "\n" + formatted
+		fmt.Fprintf(b, "#EXT-X-PROGRAM-DATE-TIME:%s\n", s.ptime)
 	}
 	if s.dcn {
-		formatted = "#EXT-X" + pf + "-DISCONTINUITY\n" + formatted
+		b.WriteString("#EXT-X-DISCONTINUITY\n")
 	}
-	return formatted
+	s.mu.Lock()
+	if parts {
+		for i, part := range s.parts {
+			var independent string
+			if part.Independent {
+				independent = "INDEPENDENT=YES,"
+			}
+			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s.%d.m4s\"\n",
+				part.Duration.Seconds(), independent, s.name, i)
+		}
+	}
+	if s.final {
+		fmt.Fprintf(b, "#EXTINF:%.f,\n%s.m4s\n", s.dur.Seconds(), s.name)
+	}
+	s.mu.Unlock()
+}
+
+func (s *segment) readPartLocked(part int) io.ReadSeeker {
+	if part >= len(s.parts) {
+		return nil
+	}
+	p := s.parts[part]
+	var offset int64
+	for _, pp := range s.parts[:part] {
+		offset += int64(pp.Length)
+	}
+	if p.Bytes != nil {
+		return bytes.NewReader(p.Bytes)
+	} else if s.f != nil {
+		return io.NewSectionReader(s.f, offset, int64(p.Length))
+	}
+	return nil
 }
 
 // serve the segment to a client
-func (s *segment) serveHTTP(rw http.ResponseWriter, req *http.Request) {
-	rw.Header().Set("Cache-Control", "max-age=600, public")
-	rw.Header().Set("Content-Type", s.mime)
-	flusher, _ := rw.(http.Flusher)
-	atomic.AddUintptr(&s.views, 1)
+func (s *segment) serveHTTP(rw http.ResponseWriter, req *http.Request, part int) {
+	var r io.ReadSeeker
+	var cc string
 	s.mu.Lock()
-	var copied int64
-	if s.final {
-		// already finalized
-		// setting content-length avoids chunked transfer-encoding
-		rw.Header().Set("Content-Length", strconv.FormatInt(s.size, 10))
+	if part >= 0 {
+		// serve a single fragment
+		r = s.readPartLocked(part)
+		cc = "max-age=60, public"
 	} else {
-		// live streaming
-		var pos int
-		var needFlush bool
-		for {
-			if pos == len(s.chunks) && needFlush && flusher != nil {
-				// if there's nothing better to do, then flush the current buffer out and try again
-				s.mu.Unlock()
-				flusher.Flush()
-				needFlush = false
-				s.mu.Lock()
-				continue
-			}
-			for ; pos < len(s.chunks); pos++ {
-				d := s.chunks[pos]
-				s.mu.Unlock()
-				if _, err := rw.Write(d); err != nil {
-					return
-				}
-				copied += int64(len(d))
-				needFlush = true
-				s.mu.Lock()
-			}
-			if s.final {
-				break
-			}
-			s.cond.Wait()
+		// serve whole segment
+		if s.final {
+			r = s.f
 		}
+		cc = "max-age=600, public"
 	}
-	remainder := s.size - copied
-	if remainder <= 0 || s.f == nil {
-		// complete
-		s.mu.Unlock()
+	s.mu.Unlock()
+	if r == nil {
+		http.NotFound(rw, req)
 		return
 	}
-	// serve the remainder from file
-	r := io.NewSectionReader(s.f, copied, remainder)
-	s.mu.Unlock()
-	io.Copy(rw, r)
+	rw.Header().Set("Cache-Control", cc)
+	rw.Header().Set("Content-Type", "video/iso.segment")
+	http.ServeContent(rw, req, "", time.Time{}, r)
 }
