@@ -5,51 +5,63 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"eaglesong.dev/hls/internal/segment"
 )
 
 // lock-free snapshot of HLS state for readers
 type hlsState struct {
-	segments      []*segment
-	initialDur    time.Duration
-	baseMSN       int
-	completeMSN   int
-	completeParts int
-	baseDCN       int
+	segments      []segment.Cursor
+	completeMSN   int // sequence number of last complete segment
+	completeParts int // complete parts in segment after completeMSN
+	playlist      []byte
+	etag          string
 }
 
-// publish a lock-free snapshot of segments
+// publish a lock-free snapshot of segments and playlist
 func (p *Publisher) snapshot(initialDur time.Duration) {
 	if initialDur == 0 {
 		initialDur = p.targetDuration()
 	}
-	segments := make([]*segment, len(p.segments))
-	copy(segments, p.segments)
-	complete := -1
-	parts := -1
-	for i, seg := range p.segments {
-		if seg.final {
-			complete = i
-		} else {
-			parts = len(seg.parts)
-			break
-		}
+	var b bytes.Buffer
+	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
+	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.baseMSN)
+	if p.baseDCN != 0 {
+		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.baseDCN)
 	}
+	fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD_BACK=1,CAN-BLOCK-RELOAD\n", 1.5*initialDur.Seconds())
+	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
+	cursors := make([]segment.Cursor, len(p.segments))
+	completeIndex := -1
+	completeParts := -1
+	for i, seg := range p.segments {
+		cursors[i] = seg.Cursor()
+		if seg.Final() {
+			completeIndex = i
+		} else if i == completeIndex+1 {
+			completeParts = seg.Parts()
+		}
+		includeParts := i >= len(p.segments)-3
+		seg.Format(&b, includeParts)
+	}
+	digest := fnv.New128a()
+	digest.Write(b.Bytes())
 	p.state.Store(hlsState{
-		segments:      segments,
-		initialDur:    initialDur,
-		baseMSN:       p.baseMSN,
-		completeMSN:   p.baseMSN + complete,
-		completeParts: parts,
-		baseDCN:       p.baseDCN,
+		segments:      cursors,
+		completeMSN:   p.baseMSN + completeIndex,
+		completeParts: completeParts,
+		playlist:      b.Bytes(),
+		etag:          fmt.Sprintf("\"%x\"", digest.Sum(nil)),
 	})
 	p.notifySegment()
 }
 
-func (state hlsState) servePlaylist(rw http.ResponseWriter, req *http.Request, waitForSegment blockFunc) {
+func (p *Publisher) servePlaylist(rw http.ResponseWriter, req *http.Request, state hlsState) {
 	wantMSN, wantPart, err := parseBlock(req.URL.Query())
 	if err != nil {
 		http.Error(rw, err.Error(), 400)
@@ -59,37 +71,21 @@ func (state hlsState) servePlaylist(rw http.ResponseWriter, req *http.Request, w
 		return
 	}
 	if wantMSN > state.completeMSN {
-		state = waitForSegment(req.Context(), wantMSN, wantPart)
+		state = p.waitForSegment(req.Context(), wantMSN, wantPart)
 		if len(state.segments) == 0 {
 			// timeout or stream disappeared
 			http.NotFound(rw, req)
 			return
 		}
 	}
-
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:%d\n",
-		int(state.initialDur.Seconds()))
-	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", state.baseMSN)
-	if state.baseDCN != 0 {
-		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", state.baseDCN)
-	}
-	fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD_BACK=1,CAN-BLOCK-RELOAD\n", 1.5*state.initialDur.Seconds())
-	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
-	for i, chunk := range state.segments {
-		parts := i >= len(state.segments)-3
-		chunk.Format(&b, parts)
-	}
 	rw.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	rw.Header().Set("Content-Length", strconv.FormatInt(int64(b.Len()), 10))
-	rw.Write(b.Bytes())
+	rw.Header().Set("Etag", state.etag)
+	http.ServeContent(rw, req, "", time.Time{}, bytes.NewReader(state.playlist))
 }
 
 type (
 	subscriber chan struct{}
 	subMap     map[subscriber]struct{}
-
-	blockFunc func(context.Context, int, int) hlsState
 )
 
 // block until segment with the given number is ready or ctx is cancelled

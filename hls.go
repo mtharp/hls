@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4"
+	"eaglesong.dev/hls/internal/segment"
 	"github.com/nareix/joy4/av"
 )
 
@@ -34,8 +35,8 @@ type Publisher struct {
 	Prefetch  bool
 	Precreate int
 
-	segments []*segment
-	segNum   int64
+	segments []*segment.Segment
+	nextID   int64
 	baseMSN  int
 	baseDCN  int
 	nextDCN  bool
@@ -45,7 +46,7 @@ type Publisher struct {
 	subs   subMap
 
 	vidx    int
-	current *segment
+	current *segment.Segment
 	frag    *fmp4.MovieFragmenter
 }
 
@@ -120,17 +121,16 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	}
 	p.frag.NewSegment()
 	initialDur := p.targetDuration()
-	if p.segNum == 0 {
-		p.segNum = time.Now().UnixNano()
+	if p.nextID == 0 {
+		p.nextID = time.Now().UnixNano()
 	}
 	var err error
-	p.current, err = newSegment(p.segNum, p.WorkDir)
+	p.current, err = segment.New(p.nextID, p.WorkDir, start, p.nextDCN, programTime)
 	if err != nil {
 		return err
 	}
-	p.current.activate(start, initialDur, p.nextDCN, programTime)
 	p.nextDCN = false
-	p.segNum++
+	p.nextID++
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -141,9 +141,9 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 // calculate the longest segment duration
 func (p *Publisher) targetDuration() time.Duration {
 	maxTime := p.frag.Duration() // pending segment duration
-	for _, chunk := range p.segments {
-		if chunk.dur > maxTime {
-			maxTime = chunk.dur
+	for _, seg := range p.segments {
+		if dur := seg.Duration(); dur > maxTime {
+			maxTime = dur
 		}
 	}
 	maxTime = maxTime.Round(time.Second)
@@ -172,7 +172,7 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	}
 	for _, seg := range p.segments[:n] {
 		p.baseMSN++
-		if seg.dcn {
+		if seg.Discontinuous() {
 			p.baseDCN++
 		}
 		seg.Release()
@@ -190,18 +190,18 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	bn := path.Base(req.URL.Path)
 	switch bn {
 	case "index.m3u8":
-		state.servePlaylist(rw, req, p.waitForSegment)
+		p.servePlaylist(rw, req, state)
 		return
 	case "init.mp4":
 		rw.Header().Set("Content-Type", "video/mp4")
 		rw.Write(p.frag.MovieHeader())
 		return
 	}
-	num, part, ok := parseFilename(bn)
+	num, part, ok := segment.ParseName(bn)
 	if ok {
-		idx := num - state.segments[0].num
+		idx := num - state.segments[0].ID()
 		if idx >= 0 && idx < int64(len(state.segments)) {
-			state.segments[idx].serveHTTP(rw, req, int(part))
+			state.segments[idx].Serve(rw, req, int(part))
 			return
 		}
 	}
