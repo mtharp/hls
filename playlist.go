@@ -34,12 +34,16 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 	if p.baseDCN != 0 {
 		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.baseDCN)
 	}
-	fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=1,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds())
 	fragLen := p.FragmentLength
 	if fragLen == 0 {
 		fragLen = defaultFragmentLength
 	}
-	fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
+	if fragLen < 0 {
+		fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n")
+	} else {
+		fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=1,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds())
+		fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
+	}
 	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	cursors := make([]segment.Cursor, len(p.segments))
 	completeIndex := -1
@@ -51,7 +55,7 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 		} else if i == completeIndex+1 {
 			completeParts = seg.Parts()
 		}
-		includeParts := i >= len(p.segments)-3
+		includeParts := fragLen > 0 && i >= len(p.segments)-3
 		seg.Format(&b, includeParts)
 	}
 	digest := fnv.New128a()

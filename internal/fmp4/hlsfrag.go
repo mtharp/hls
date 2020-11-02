@@ -37,10 +37,7 @@ func NewMovie(streams []av.CodecData) (*MovieFragmenter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("track %d: %w", i, err)
 		}
-		atoms[i], err = f.tracks[i].Track()
-		if err != nil {
-			return nil, fmt.Errorf("track %d: %w", i, err)
-		}
+		atoms[i] = f.tracks[i].atom
 		if cd.Type().IsVideo() {
 			f.vidx = i
 		}

@@ -4,17 +4,23 @@ import (
 	"errors"
 	"time"
 
+	"eaglesong.dev/hls/internal/fmp4/fmp4io"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/h264parser"
 )
 
 // TrackFragmenter writes a single audio or video stream as a series of CMAF (fMP4) fragments
 type TrackFragmenter struct {
-	seqNum    uint32
 	codecData av.CodecData
 	trackID   uint32
 	timeScale uint32
+	atom      *fmp4io.Track
 	pending   []av.Packet
+
+	// for CMAF (single track) only
+	seqNum uint32
+	fhdr   []byte
+	shdrw  bool
 }
 
 // NewTrack creates a fragmenter from the given stream codec
@@ -27,7 +33,13 @@ func NewTrack(codecData av.CodecData) (*TrackFragmenter, error) {
 		codecData: codecData,
 		trackID:   trackID,
 	}
-	return f, nil
+	var err error
+	f.atom, err = f.Track()
+	if err != nil {
+		return nil, err
+	}
+	f.fhdr, err = MovieHeader([]*fmp4io.Track{f.atom})
+	return f, err
 }
 
 // WritePacket appends a packet to the fragmenter
@@ -77,4 +89,27 @@ func (f *TrackFragmenter) Duration() time.Duration {
 // TimeScale returns the number of timestamp ticks (DTS) that elapse in 1 second for this track
 func (f *TrackFragmenter) TimeScale() uint32 {
 	return f.timeScale
+}
+
+// Fragment produces a fragment out of the currently-queued packets.
+func (f *TrackFragmenter) Fragment() RawFragment {
+	dur := f.Duration()
+	tf := f.makeFragment()
+	f.seqNum++
+	initial := !f.shdrw
+	f.shdrw = true
+	frag := marshalFragment([]fragmentWithData{tf}, f.seqNum, initial)
+	frag.Duration = dur
+	return frag
+}
+
+// NewSegment indicates that a new segment has begun and the next call to
+// Fragment() should include a leading FTYP header.
+func (f *TrackFragmenter) NewSegment() {
+	f.shdrw = false
+}
+
+// MovieHeader marshals an init.mp4 for this track
+func (f *TrackFragmenter) MovieHeader() []byte {
+	return f.fhdr
 }

@@ -91,7 +91,7 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		return nil
 	}
 	fragLen := p.FragmentLength
-	if fragLen == 0 {
+	if fragLen <= 0 {
 		fragLen = defaultFragmentLength
 	}
 	if pkt.IsKeyFrame {
