@@ -127,6 +127,9 @@ func (s *Segment) Release() {
 func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.final && len(s.parts) == 0 {
+		return
+	}
 	if s.programTime != "" {
 		fmt.Fprintf(b, "#EXT-X-PROGRAM-DATE-TIME:%s\n", s.programTime)
 	}

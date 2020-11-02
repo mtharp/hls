@@ -29,12 +29,17 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 		initialDur = p.targetDuration()
 	}
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
+	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
 	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.baseMSN)
 	if p.baseDCN != 0 {
 		fmt.Fprintf(&b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.baseDCN)
 	}
-	fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD_BACK=1,CAN-BLOCK-RELOAD\n", 1.5*initialDur.Seconds())
+	fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=1,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds())
+	fragLen := p.FragmentLength
+	if fragLen == 0 {
+		fragLen = defaultFragmentLength
+	}
+	fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	cursors := make([]segment.Cursor, len(p.segments))
 	completeIndex := -1
