@@ -7,8 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"eaglesong.dev/hls/internal/fmp4"
+	"eaglesong.dev/hls/internal/fragment"
 	"eaglesong.dev/hls/internal/segment"
+	"eaglesong.dev/hls/internal/tsfrag"
 	"github.com/nareix/joy4/av"
 )
 
@@ -47,7 +48,7 @@ type Publisher struct {
 
 	vidx    int
 	current *segment.Segment
-	frag    *fmp4.MovieFragmenter
+	frag    fragment.Fragmenter
 }
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
@@ -58,7 +59,8 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		}
 	}
 	var err error
-	p.frag, err = fmp4.NewMovie(streams)
+	// p.frag, err = fmp4.NewMovie(streams)
+	p.frag, err = tsfrag.New(streams)
 	return err
 }
 
@@ -101,7 +103,11 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		return p.newSegment(pkt.Time, pkt.ProgramTime)
 	} else if p.current != nil && p.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically
-		p.current.Append(p.frag.Fragment())
+		tf, err := p.frag.Fragment()
+		if err != nil {
+			return err
+		}
+		p.current.Append(tf)
 		p.snapshot(0)
 	}
 	return nil
@@ -116,7 +122,11 @@ func (p *Publisher) Discontinuity() {
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
 	if p.current != nil {
 		// flush and finalize previous segment
-		p.current.Append(p.frag.Fragment())
+		tf, err := p.frag.Fragment()
+		if err != nil {
+			return err
+		}
+		p.current.Append(tf)
 		p.current.Finalize(start)
 	}
 	p.frag.NewSegment()

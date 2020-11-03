@@ -44,7 +44,8 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 		return
 	}
 	rw.Header().Set("Cache-Control", cc)
-	rw.Header().Set("Content-Type", "video/iso.segment")
+	// rw.Header().Set("Content-Type", "video/iso.segment")
+	rw.Header().Set("Content-Type", "video/MP2T")
 	http.ServeContent(rw, req, "", time.Time{}, r)
 }
 

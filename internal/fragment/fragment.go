@@ -1,0 +1,22 @@
+package fragment
+
+import (
+	"time"
+
+	"github.com/nareix/joy4/av"
+)
+
+type Fragment struct {
+	Bytes       []byte
+	Length      int
+	Independent bool
+	Duration    time.Duration
+}
+
+type Fragmenter interface {
+	av.PacketWriter
+	Fragment() (Fragment, error)
+	Duration() time.Duration
+	MovieHeader() []byte
+	NewSegment()
+}

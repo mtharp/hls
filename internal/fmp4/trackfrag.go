@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
+	"eaglesong.dev/hls/internal/fragment"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/h264parser"
 )
@@ -92,7 +93,7 @@ func (f *TrackFragmenter) TimeScale() uint32 {
 }
 
 // Fragment produces a fragment out of the currently-queued packets.
-func (f *TrackFragmenter) Fragment() RawFragment {
+func (f *TrackFragmenter) Fragment() fragment.Fragment {
 	dur := f.Duration()
 	tf := f.makeFragment()
 	f.seqNum++

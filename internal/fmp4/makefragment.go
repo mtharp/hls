@@ -1,9 +1,8 @@
 package fmp4
 
 import (
-	"time"
-
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
+	"eaglesong.dev/hls/internal/fragment"
 	"eaglesong.dev/hls/internal/timescale"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/utils/bits/pio"
@@ -123,14 +122,7 @@ func (f *TrackFragmenter) makeFragment() fragmentWithData {
 	return d
 }
 
-type RawFragment struct {
-	Bytes       []byte
-	Length      int
-	Independent bool
-	Duration    time.Duration
-}
-
-func marshalFragment(tracks []fragmentWithData, seqNum uint32, initial bool) RawFragment {
+func marshalFragment(tracks []fragmentWithData, seqNum uint32, initial bool) fragment.Fragment {
 	// fill out fragment header
 	moof := &fmp4io.MovieFrag{
 		Header: &fmp4io.MovieFragHeader{
@@ -178,7 +170,7 @@ func marshalFragment(tracks []fragmentWithData, seqNum uint32, initial bool) Raw
 			b = append(b, pkt.Data...)
 		}
 	}
-	return RawFragment{
+	return fragment.Fragment{
 		Bytes:       b,
 		Length:      len(b),
 		Independent: independent,

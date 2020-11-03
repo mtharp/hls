@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
+	"eaglesong.dev/hls/internal/fragment"
 	"github.com/nareix/joy4/av"
 )
 
@@ -53,7 +54,7 @@ func NewMovie(streams []av.CodecData) (*MovieFragmenter, error) {
 }
 
 // Fragment produces a fragment out of the currently-queued packets.
-func (f *MovieFragmenter) Fragment() RawFragment {
+func (f *MovieFragmenter) Fragment() (fragment.Fragment, error) {
 	dur := f.tracks[f.vidx].Duration()
 	var tracks []fragmentWithData
 	for _, track := range f.tracks {
@@ -67,7 +68,7 @@ func (f *MovieFragmenter) Fragment() RawFragment {
 	f.shdrw = true
 	frag := marshalFragment(tracks, f.seqNum, initial)
 	frag.Duration = dur
-	return frag
+	return frag, nil
 }
 
 // WritePacket formats and queues a packet for the next fragment to be written

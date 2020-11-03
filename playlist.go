@@ -44,7 +44,7 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 		fmt.Fprintf(&b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=1,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds())
 		fmt.Fprintf(&b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	}
-	b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
+	// b.WriteString("#EXT-X-MAP:URI=\"init.mp4\"\n")
 	cursors := make([]segment.Cursor, len(p.segments))
 	completeIndex := -1
 	completeParts := -1

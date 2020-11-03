@@ -2,19 +2,21 @@ package tsfrag
 
 import (
 	"bytes"
-	"errors"
-	"io"
 	"time"
 
+	"eaglesong.dev/hls/internal/fragment"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/format/ts"
 )
 
 type Fragmenter struct {
-	w      io.Writer
-	buf    bytes.Buffer
-	header []byte
-	mux    *ts.Muxer
+	buf     bytes.Buffer
+	mux     *ts.Muxer
+	pending []av.Packet
+	vidx    int
+
+	shdr []byte
+	shdw bool
 }
 
 func New(streams []av.CodecData) (*Fragmenter, error) {
@@ -23,37 +25,66 @@ func New(streams []av.CodecData) (*Fragmenter, error) {
 	if err := f.mux.WriteHeader(streams); err != nil {
 		return nil, err
 	}
-	f.header = make([]byte, f.buf.Len())
-	copy(f.header, f.buf.Bytes())
+	for i, cd := range streams {
+		if cd.Type().IsVideo() {
+			f.vidx = i
+		}
+	}
+	f.shdr = make([]byte, f.buf.Len())
+	copy(f.shdr, f.buf.Bytes())
 	return f, nil
 }
 
-// SetWriter starts writing a new segment to w
-func (f *Fragmenter) SetWriter(w io.Writer) error {
-	f.w = w
-	_, err := w.Write(f.header)
-	return err
+func (f *Fragmenter) MovieHeader() []byte {
+	return nil
+}
+
+func (f *Fragmenter) NewSegment() {
+	f.shdw = false
+}
+
+func (f *Fragmenter) Duration() time.Duration {
+	if len(f.pending) < 2 {
+		return 0
+	}
+	return f.pending[len(f.pending)-1].Time - f.pending[0].Time
 }
 
 // WritePacket formats and queues a packet for the next fragment to be written
 func (f *Fragmenter) WritePacket(pkt av.Packet) error {
-	if f.w == nil {
-		return errors.New("output is not set")
+
+	f.pending = append(f.pending, pkt)
+	return nil
+}
+
+func (f *Fragmenter) Fragment() (fragment.Fragment, error) {
+	if len(f.pending) < 2 {
+		return fragment.Fragment{}, nil
 	}
 	f.buf.Reset()
-	if err := f.mux.WritePacket(pkt); err != nil {
-		return err
+	if !f.shdw {
+		f.buf.Write(f.shdr)
+		f.shdw = true
 	}
-	_, err := f.w.Write(f.buf.Bytes())
-	return err
-}
-
-// Flush is unused
-func (f *Fragmenter) Flush(next time.Duration) error {
-	return nil
-}
-
-// FileHeader is unused
-func (f *Fragmenter) FileHeader() []byte {
-	return nil
+	independent := true
+	var sawFirstVid bool
+	for _, pkt := range f.pending[:len(f.pending)-1] {
+		if int(pkt.Idx) == f.vidx && !sawFirstVid {
+			independent = pkt.IsKeyFrame
+			sawFirstVid = true
+		}
+		if err := f.mux.WritePacket(pkt); err != nil {
+			return fragment.Fragment{}, err
+		}
+	}
+	buf := make([]byte, f.buf.Len())
+	copy(buf, f.buf.Bytes())
+	frag := fragment.Fragment{
+		Bytes:       buf,
+		Length:      len(buf),
+		Duration:    f.Duration(),
+		Independent: independent,
+	}
+	f.pending = f.pending[len(f.pending)-1:]
+	return frag, nil
 }
