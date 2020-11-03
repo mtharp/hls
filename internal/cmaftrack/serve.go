@@ -2,7 +2,6 @@ package cmaftrack
 
 import (
 	"bytes"
-	"log"
 	"net/http"
 	"time"
 
@@ -25,11 +24,7 @@ func (t *Timeline) ServeInit(rw http.ResponseWriter, req *http.Request) {
 func (t *Timeline) ServeSegment(rw http.ResponseWriter, req *http.Request, segNum int64) {
 	snapshot, ok := t.state.Load().(segmentSnapshot)
 	if ok {
-		for _, s := range snapshot.segments {
-			log.Println("have", s.seq)
-		}
 		i := int(segNum - snapshot.baseSeg)
-		log.Println("want", segNum, i)
 		if i >= 0 && i < len(snapshot.segments) {
 			snapshot.segments[i].ServeHTTP(rw, req)
 			return
@@ -68,6 +63,9 @@ func (t *Timeline) AdaptationSet(prefix string) dashmpd.AdaptationSet {
 				Timescale:      int(t.frag.TimeScale()),
 				Initialization: prefix + "init.mp4",
 				Media:          prefix + "$Number$.m4s",
+
+				AvailabilityTimeComplete: "false",
+				AvailabilityTimeOffset:   7,
 			},
 			Representation: []dashmpd.Representation{{
 				ID:        "v0",
@@ -77,9 +75,6 @@ func (t *Timeline) AdaptationSet(prefix string) dashmpd.AdaptationSet {
 				Codecs:    "avc1.64001f", // TODO
 				Bandwidth: 1500000,       // TODO
 				MimeType:  "video/mp4",
-
-				AvailabilityTimeComplete: "false",
-				AvailabilityTimeOffset:   4,
 			}},
 		}
 	case av.AudioCodecData:
@@ -91,6 +86,9 @@ func (t *Timeline) AdaptationSet(prefix string) dashmpd.AdaptationSet {
 				Timescale:      int(t.frag.TimeScale()),
 				Initialization: prefix + "init.mp4",
 				Media:          prefix + "$Number$.m4s",
+
+				AvailabilityTimeComplete: "false",
+				AvailabilityTimeOffset:   7,
 			},
 			Representation: []dashmpd.Representation{{
 				ID:                "a0",
@@ -102,8 +100,6 @@ func (t *Timeline) AdaptationSet(prefix string) dashmpd.AdaptationSet {
 					SchemeID: "urn:mpeg:dash:23003:3:audio_channel_configuration:2011",
 					Value:    cd.ChannelLayout().Count(),
 				},
-				AvailabilityTimeComplete: "false",
-				AvailabilityTimeOffset:   4,
 			}},
 		}
 	default:

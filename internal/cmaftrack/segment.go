@@ -55,6 +55,7 @@ func (t *Timeline) newSegment(nextSegment int64) error {
 		return err
 	}
 	seg.seq = nextSegment
+	t.curSeg = nextSegment
 	// append segment and trim old ones
 	if t.baseSeg < 0 {
 		t.baseSeg = nextSegment

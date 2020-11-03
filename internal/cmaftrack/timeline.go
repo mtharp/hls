@@ -47,7 +47,6 @@ func (t *Timeline) WriteHeader(streams []av.CodecData) (err error) {
 	if len(streams) != 1 {
 		return errors.New("expected exactly 1 track")
 	}
-	t.baseSeg = -1
 	t.curSeg = -1
 	t.cd = streams[0]
 	t.frag, err = fmp4.NewTrack(t.cd)
@@ -57,9 +56,6 @@ func (t *Timeline) WriteHeader(streams []av.CodecData) (err error) {
 func (t *Timeline) WritePacket(pkt av.Packet) error {
 	if t.closed {
 		return errors.New("can't write to closed fragmenter")
-	}
-	if t.baseSeg < 0 && !pkt.IsKeyFrame {
-		return nil
 	}
 	if err := t.frag.WritePacket(pkt); err != nil {
 		return err

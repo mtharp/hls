@@ -54,6 +54,9 @@ type SegmentTemplate struct {
 	Media          string `xml:"media,attr"`
 	StartNumber    int    `xml:"startNumber,attr"`
 	Timescale      int    `xml:"timescale,attr"`
+
+	AvailabilityTimeComplete string  `xml:"availabilityTimeComplete,attr,omitempty"`
+	AvailabilityTimeOffset   float64 `xml:"availabilityTimeOffset,attr,omitempty"`
 }
 
 type Representation struct {
@@ -66,9 +69,6 @@ type Representation struct {
 	Width             int     `xml:"width,attr,omitempty"`
 	Height            int     `xml:"height,attr,omitempty"`
 	SAR               string  `xml:"sar,attr,omitempty"`
-
-	AvailabilityTimeComplete string  `xml:"availabilityTimeComplete,attr,omitempty"`
-	AvailabilityTimeOffset   float64 `xml:"availabilityTimeOffset,attr,omitempty"`
 
 	AudioChannelConfiguration *AudioChannelConfiguration
 }
