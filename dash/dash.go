@@ -60,9 +60,9 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 	p.pid = "d" + strconv.FormatInt(time.Now().Unix(), 36)
 	p.mpd = dashmpd.MPD{
 		ID:                    p.pid,
-		Profiles:              "urn:mpeg:dash:profile:full:2011",
+		Profiles:              "urn:mpeg:dash:profile:isoff-live:2011",
 		Type:                  "dynamic",
-		MinBufferTime:         dashmpd.Duration{Duration: time.Second},
+		MinBufferTime:         dashmpd.Duration{Duration: 1000 * time.Millisecond},
 		AvailabilityStartTime: time.Now().UTC().Truncate(time.Millisecond),
 		MaxSegmentDuration:    dashmpd.Duration{Duration: 8 * time.Second},  // TODO
 		TimeShiftBufferDepth:  dashmpd.Duration{Duration: 10 * time.Minute}, // TODO
@@ -134,11 +134,11 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 	return nil
 }
 
-func (p *Publisher) ID() string {
+func (p *Publisher) Name() string {
 	if p == nil {
 		return ""
 	}
-	return p.pid
+	return p.pid + ".mpd"
 }
 
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {

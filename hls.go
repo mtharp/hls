@@ -3,6 +3,7 @@ package hls
 import (
 	"net/http"
 	"path"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,7 @@ type Publisher struct {
 	Prefetch  bool
 	Precreate int
 
+	basename string
 	segments []*segment.Segment
 	nextID   int64
 	baseMSN  int
@@ -52,6 +54,7 @@ type Publisher struct {
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
 func (p *Publisher) WriteHeader(streams []av.CodecData) error {
+	p.basename = "d" + strconv.FormatInt(time.Now().Unix(), 36) + ".m3u8"
 	for i, cd := range streams {
 		if cd.Type().IsVideo() {
 			p.vidx = i
@@ -180,6 +183,13 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	p.segments = p.segments[n:]
 }
 
+func (p *Publisher) Name() string {
+	if p == nil {
+		return ""
+	}
+	return p.basename
+}
+
 // serve the HLS playlist and segments
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	state, ok := p.state.Load().(hlsState)
@@ -189,7 +199,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	bn := path.Base(req.URL.Path)
 	switch bn {
-	case "index.m3u8":
+	case "index.m3u8", p.basename:
 		p.servePlaylist(rw, req, state)
 		return
 	case "init.mp4":
