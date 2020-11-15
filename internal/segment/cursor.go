@@ -17,8 +17,10 @@ func (s *Segment) Cursor() Cursor {
 	return Cursor{s: s}
 }
 
-// ID returns the unique identifier of this segment
-func (c *Cursor) ID() int64 { return c.s.id }
+// Valid returns true if the segment exists
+func (c *Cursor) Valid() bool {
+	return c.s != nil
+}
 
 // Serve the segment to a client.
 //

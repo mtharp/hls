@@ -38,10 +38,10 @@ type Publisher struct {
 
 	basename string
 	segments []*segment.Segment
-	nextID   int64
-	baseMSN  int
-	baseDCN  int
-	nextDCN  bool
+	names    segment.NameGenerator
+	baseMSN  segment.MSN // MSN of segments[0]
+	baseDCN  int         // number of previous discontinuities
+	nextDCN  bool        // if next segment is discontinuous
 	state    atomic.Value
 
 	subsMu sync.Mutex
@@ -60,6 +60,7 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 			p.vidx = i
 		}
 	}
+	p.names.Suffix = ".m4s"
 	var err error
 	p.frag, err = fmp4.NewMovie(streams)
 	return err
@@ -124,16 +125,12 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	}
 	p.frag.NewSegment()
 	initialDur := p.targetDuration()
-	if p.nextID == 0 {
-		p.nextID = time.Now().UnixNano()
-	}
 	var err error
-	p.current, err = segment.New(p.nextID, p.WorkDir, start, p.nextDCN, programTime)
+	p.current, err = segment.New(p.names.Next(), p.WorkDir, start, p.nextDCN, programTime)
 	if err != nil {
 		return err
 	}
 	p.nextDCN = false
-	p.nextID++
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -183,6 +180,7 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	p.segments = p.segments[n:]
 }
 
+// Name returns the unique name of the playlist of this instance of the stream
 func (p *Publisher) Name() string {
 	if p == nil {
 		return ""
@@ -198,20 +196,30 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	bn := path.Base(req.URL.Path)
-	switch bn {
-	case "index.m3u8", p.basename:
+	switch path.Ext(bn) {
+	case ".m3u8":
 		p.servePlaylist(rw, req, state)
 		return
-	case "init.mp4":
+	case ".mp4":
 		rw.Header().Set("Content-Type", "video/mp4")
 		rw.Write(p.frag.MovieHeader())
 		return
-	}
-	num, part, ok := segment.ParseName(bn)
-	if ok {
-		idx := num - state.segments[0].ID()
-		if idx >= 0 && idx < int64(len(state.segments)) {
-			state.segments[idx].Serve(rw, req, int(part))
+	case state.parser.Suffix:
+		msn, ok := state.parser.Parse(bn)
+		if !ok {
+			break
+		}
+		cursor, waitable := state.Get(msn.MSN)
+		if !waitable {
+			// expired
+			break
+		} else if !cursor.Valid() {
+			// wait for it to become available
+			state = p.waitForSegment(req.Context(), msn)
+			cursor, _ = state.Get(msn.MSN)
+		}
+		if cursor.Valid() {
+			cursor.Serve(rw, req, msn.Part)
 			return
 		}
 	}

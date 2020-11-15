@@ -14,13 +14,34 @@ import (
 	"eaglesong.dev/hls/internal/segment"
 )
 
+const maxFutureMSN = 3
+
 // lock-free snapshot of HLS state for readers
 type hlsState struct {
-	segments      []segment.Cursor
-	completeMSN   int // sequence number of last complete segment
-	completeParts int // complete parts in segment after completeMSN
-	playlist      []byte
-	etag          string
+	segments []segment.Cursor
+	playlist []byte
+	etag     string
+	first    segment.MSN
+	complete segment.PartMSN
+	parser   segment.Parser
+}
+
+// Get a segment by MSN. Returns the zero value if it isn't available.
+func (s hlsState) Get(msn segment.MSN) (c segment.Cursor, ok bool) {
+	if msn > s.complete.MSN+maxFutureMSN {
+		// too far in the future
+		return segment.Cursor{}, false
+	}
+	idx := int(msn - s.first)
+	if idx < 0 {
+		// expired
+		return segment.Cursor{}, false
+	} else if idx >= len(s.segments) {
+		// ready soon
+		return segment.Cursor{}, true
+	}
+	// ready now
+	return s.segments[idx], true
 }
 
 // publish a lock-free snapshot of segments and playlist
@@ -61,26 +82,30 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 	digest := fnv.New128a()
 	digest.Write(b.Bytes())
 	p.state.Store(hlsState{
-		segments:      cursors,
-		completeMSN:   p.baseMSN + completeIndex,
-		completeParts: completeParts,
-		playlist:      b.Bytes(),
-		etag:          fmt.Sprintf("\"%x\"", digest.Sum(nil)),
+		segments: cursors,
+		playlist: b.Bytes(),
+		etag:     fmt.Sprintf("\"%x\"", digest.Sum(nil)),
+		parser:   p.names.Parser(),
+		first:    p.baseMSN,
+		complete: segment.PartMSN{
+			MSN:  p.baseMSN + segment.MSN(completeIndex),
+			Part: completeParts,
+		},
 	})
 	p.notifySegment()
 }
 
 func (p *Publisher) servePlaylist(rw http.ResponseWriter, req *http.Request, state hlsState) {
-	wantMSN, wantPart, err := parseBlock(req.URL.Query())
+	want, err := parseBlock(req.URL.Query())
 	if err != nil {
 		http.Error(rw, err.Error(), 400)
 		return
-	} else if wantMSN > state.completeMSN+3 {
+	} else if want.MSN > state.complete.MSN+maxFutureMSN {
 		http.Error(rw, "_HLS_msn is in the distant future", 400)
 		return
 	}
-	if wantMSN > state.completeMSN {
-		state = p.waitForSegment(req.Context(), wantMSN, wantPart)
+	if !state.complete.Satisfies(want) {
+		state = p.waitForSegment(req.Context(), want)
 		if len(state.segments) == 0 {
 			// timeout or stream disappeared
 			http.NotFound(rw, req)
@@ -98,7 +123,7 @@ type (
 )
 
 // block until segment with the given number is ready or ctx is cancelled
-func (p *Publisher) waitForSegment(ctx context.Context, wantMSN, wantPart int) hlsState {
+func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hlsState {
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 	// subscribe to segment updates
@@ -120,11 +145,7 @@ func (p *Publisher) waitForSegment(ctx context.Context, wantMSN, wantPart int) h
 		if !ok {
 			return hlsState{}
 		}
-		if wantMSN <= state.completeMSN {
-			// wanted segment is complete
-			return state
-		} else if wantMSN == state.completeMSN+1 && wantPart >= 0 && wantPart < state.completeParts {
-			// wanted part is complete
+		if state.complete.Satisfies(want) {
 			return state
 		}
 		// wait for notify or for timeout/disconnect
@@ -149,26 +170,28 @@ func (p *Publisher) notifySegment() {
 	}
 }
 
-func parseBlock(q url.Values) (wantMSN, wantPart int, err error) {
+func parseBlock(q url.Values) (want segment.PartMSN, err error) {
+	want = segment.PartMSN{MSN: -1, Part: -1}
 	v := q.Get("_HLS_msn")
 	if v == "" {
-		return -1, -1, nil
+		// not blocking
+		return
 	}
 	vv, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || vv < 0 {
-		return -1, -1, errors.New("invalid _HLS_msn")
+		return want, errors.New("invalid _HLS_msn")
 	}
-	wantMSN = int(vv)
-
+	want.MSN = segment.MSN(vv)
 	v = q.Get("_HLS_part")
 	if v == "" {
-		wantPart = -1
+		// block for whole segment
 		return
 	}
 	vv, err = strconv.ParseInt(v, 10, 64)
 	if err != nil || vv < 0 {
-		return -1, -1, errors.New("invalid _HLS_part")
+		return want, errors.New("invalid _HLS_part")
 	}
-	wantPart = int(vv)
+	// block for part
+	want.Part = int(vv)
 	return
 }
