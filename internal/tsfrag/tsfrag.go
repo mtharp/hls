@@ -35,8 +35,8 @@ func New(streams []av.CodecData) (*Fragmenter, error) {
 	return f, nil
 }
 
-func (f *Fragmenter) MovieHeader() []byte {
-	return nil
+func (f *Fragmenter) MovieHeader() (string, string, []byte) {
+	return "", "", nil
 }
 
 func (f *Fragmenter) NewSegment() {

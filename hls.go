@@ -1,12 +1,15 @@
 package hls
 
 import (
+	"errors"
 	"net/http"
 	"path"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"eaglesong.dev/hls/internal/fmp4"
 	"eaglesong.dev/hls/internal/fragment"
 	"eaglesong.dev/hls/internal/segment"
 	"eaglesong.dev/hls/internal/tsfrag"
@@ -20,6 +23,16 @@ const (
 	slopOffset             = time.Millisecond
 )
 
+// Muxer identifies what type of container to use for the video stream
+type Muxer int
+
+const (
+	// FMP4 uses a fragmented MP4 muxer, and is the default.
+	FMP4 = Muxer(iota)
+	// MPEG2TS uses a transport stream muxer. Better compatibilty with legacy players, but LL-HLS may not work.
+	MPEG2TS
+)
+
 // Publisher implements a live HLS stream server
 type Publisher struct {
 	// InitialDuration is a guess for the TARGETDURATION field in the playlist,
@@ -31,16 +44,18 @@ type Publisher struct {
 	FragmentLength time.Duration
 	// WorkDir is a temporary storage location for segments. Can be empty, in which case the default system temp dir is used.
 	WorkDir string
-	// Prefetch indicates that low-latency HLS (LHLS) tags should be used
-	// https://github.com/video-dev/hlsjs-rfcs/blob/a6e7cc44294b83a7dba8c4f45df6d80c4bd13955/proposals/0001-lhls.md
-	Prefetch  bool
-	Precreate int
+	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
+	Prefetch bool
+	// Muxer selects which type of container to use for the video stream
+	Muxer Muxer
 
+	basename string
+	hdrExt   string
 	segments []*segment.Segment
-	nextID   int64
-	baseMSN  int
-	baseDCN  int
-	nextDCN  bool
+	names    segment.NameGenerator
+	baseMSN  segment.MSN // MSN of segments[0]
+	baseDCN  int         // number of previous discontinuities
+	nextDCN  bool        // if next segment is discontinuous
 	state    atomic.Value
 
 	subsMu sync.Mutex
@@ -49,19 +64,36 @@ type Publisher struct {
 	vidx    int
 	current *segment.Segment
 	frag    fragment.Fragmenter
+
+	// Precreate is deprecated and no longer used
+	Precreate int
 }
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
 func (p *Publisher) WriteHeader(streams []av.CodecData) error {
+	p.basename = "d" + strconv.FormatInt(time.Now().Unix(), 36) + ".m3u8"
 	for i, cd := range streams {
 		if cd.Type().IsVideo() {
 			p.vidx = i
 		}
 	}
 	var err error
-	// p.frag, err = fmp4.NewMovie(streams)
-	p.frag, err = tsfrag.New(streams)
-	return err
+	switch p.Muxer {
+	case FMP4:
+		p.names = segment.MP4Generator
+		p.frag, err = fmp4.NewMovie(streams)
+	case MPEG2TS:
+		p.names = segment.MPEG2TSGenerator
+		p.frag, err = tsfrag.New(streams)
+	default:
+		err = errors.New("unsupported muxer")
+	}
+	if err != nil {
+		return err
+	}
+	headerName, _, _ := p.frag.MovieHeader()
+	p.hdrExt = path.Ext(headerName)
+	return nil
 }
 
 // WriteTrailer does nothing, but fulfills av.Muxer
@@ -131,16 +163,12 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	}
 	p.frag.NewSegment()
 	initialDur := p.targetDuration()
-	if p.nextID == 0 {
-		p.nextID = time.Now().UnixNano()
-	}
 	var err error
-	p.current, err = segment.New(p.nextID, p.WorkDir, start, p.nextDCN, programTime)
+	p.current, err = segment.New(p.names.Next(), p.WorkDir, start, p.nextDCN, programTime)
 	if err != nil {
 		return err
 	}
 	p.nextDCN = false
-	p.nextID++
 	// add the new segment and remove the old
 	p.segments = append(p.segments, p.current)
 	p.trimSegments(initialDur)
@@ -190,6 +218,14 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	p.segments = p.segments[n:]
 }
 
+// Name returns the unique name of the playlist of this instance of the stream
+func (p *Publisher) Name() string {
+	if p == nil {
+		return ""
+	}
+	return p.basename
+}
+
 // serve the HLS playlist and segments
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	state, ok := p.state.Load().(hlsState)
@@ -198,20 +234,31 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	bn := path.Base(req.URL.Path)
-	switch bn {
-	case "index.m3u8":
+	switch path.Ext(bn) {
+	case ".m3u8":
 		p.servePlaylist(rw, req, state)
 		return
-	case "init.mp4":
-		rw.Header().Set("Content-Type", "video/mp4")
-		rw.Write(p.frag.MovieHeader())
+	case p.hdrExt:
+		_, ctype, blob := p.frag.MovieHeader()
+		rw.Header().Set("Content-Type", ctype)
+		rw.Write(blob)
 		return
-	}
-	num, part, ok := segment.ParseName(bn)
-	if ok {
-		idx := num - state.segments[0].ID()
-		if idx >= 0 && idx < int64(len(state.segments)) {
-			state.segments[idx].Serve(rw, req, int(part))
+	case state.parser.Suffix:
+		msn, ok := state.parser.Parse(bn)
+		if !ok {
+			break
+		}
+		cursor, waitable := state.Get(msn.MSN)
+		if !waitable {
+			// expired
+			break
+		} else if !cursor.Valid() {
+			// wait for it to become available
+			state = p.waitForSegment(req.Context(), msn)
+			cursor, _ = state.Get(msn.MSN)
+		}
+		if cursor.Valid() {
+			cursor.Serve(rw, req, msn.Part)
 			return
 		}
 	}

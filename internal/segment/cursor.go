@@ -17,8 +17,10 @@ func (s *Segment) Cursor() Cursor {
 	return Cursor{s: s}
 }
 
-// ID returns the unique identifier of this segment
-func (c *Cursor) ID() int64 { return c.s.id }
+// Valid returns true if the segment exists
+func (c *Cursor) Valid() bool {
+	return c.s != nil
+}
 
 // Serve the segment to a client.
 //
@@ -44,8 +46,7 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 		return
 	}
 	rw.Header().Set("Cache-Control", cc)
-	// rw.Header().Set("Content-Type", "video/iso.segment")
-	rw.Header().Set("Content-Type", "video/MP2T")
+	rw.Header().Set("Content-Type", c.s.name.contentType)
 	http.ServeContent(rw, req, "", time.Time{}, r)
 }
 
