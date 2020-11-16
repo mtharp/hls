@@ -21,6 +21,7 @@ type Segment struct {
 	programTime string
 	// modified while the segment is live
 	mu    sync.Mutex
+	cond  sync.Cond
 	parts []fragment.Fragment
 	// set when the segment is finalized
 	f     *os.File
@@ -36,6 +37,7 @@ func New(name Name, workDir string, start time.Duration, dcn bool, programTime t
 		start: start,
 		dcn:   dcn,
 	}
+	s.cond.L = &s.mu
 	if !programTime.IsZero() {
 		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
@@ -54,6 +56,7 @@ func (s *Segment) Append(frag fragment.Fragment) error {
 	s.parts = append(s.parts, frag)
 	s.size += int64(frag.Length)
 	s.mu.Unlock()
+	s.cond.Broadcast()
 	_, err := s.f.Write(frag.Bytes)
 	return err
 }
@@ -83,6 +86,7 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 		s.parts[i].Bytes = nil
 	}
 	s.mu.Unlock()
+	s.cond.Broadcast()
 }
 
 // Release the backing storage associated with the segment

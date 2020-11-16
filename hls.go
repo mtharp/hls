@@ -254,7 +254,13 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			break
 		} else if !cursor.Valid() {
 			// wait for it to become available
-			state = p.waitForSegment(req.Context(), msn)
+			wait := msn
+			if msn.Part < 0 {
+				// to support DASH, if the whole segment is requested then only
+				// wait for the first part and then trickle out the rest
+				wait.Part = 0
+			}
+			state = p.waitForSegment(req.Context(), wait)
 			cursor, _ = state.Get(msn.MSN)
 		}
 		if cursor.Valid() {
