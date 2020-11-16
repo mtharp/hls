@@ -93,7 +93,7 @@ func (f *TrackFragmenter) TimeScale() uint32 {
 }
 
 // Fragment produces a fragment out of the currently-queued packets.
-func (f *TrackFragmenter) Fragment() fragment.Fragment {
+func (f *TrackFragmenter) Fragment() (fragment.Fragment, error) {
 	dur := f.Duration()
 	tf := f.makeFragment()
 	f.seqNum++
@@ -101,7 +101,7 @@ func (f *TrackFragmenter) Fragment() fragment.Fragment {
 	f.shdrw = true
 	frag := marshalFragment([]fragmentWithData{tf}, f.seqNum, initial)
 	frag.Duration = dur
-	return frag
+	return frag, nil
 }
 
 // NewSegment indicates that a new segment has begun and the next call to
@@ -111,6 +111,6 @@ func (f *TrackFragmenter) NewSegment() {
 }
 
 // MovieHeader marshals an init.mp4 for this track
-func (f *TrackFragmenter) MovieHeader() []byte {
-	return f.fhdr
+func (f *TrackFragmenter) MovieHeader() (filename, contentType string, blob []byte) {
+	return "init.mp4", "video/mp4", f.fhdr
 }

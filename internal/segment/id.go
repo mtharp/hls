@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -70,14 +71,14 @@ type Name struct {
 	base, suffix, contentType string
 }
 
-// String returns the filename of the segment
-func (n Name) String() string {
-	return n.base + n.suffix
+// Segment returns the filename of the segment
+func (n Name) Segment(trackID int) string {
+	return fmt.Sprintf("%d%s%s", trackID, n.base, n.suffix)
 }
 
 // Part returns the filename of a segment part
-func (n Name) Part(part int) string {
-	return n.base + "." + strconv.FormatInt(int64(part), 10) + n.suffix
+func (n Name) Part(trackID, part int) string {
+	return fmt.Sprintf("%d%s.%d%s", trackID, n.base, part, n.suffix)
 }
 
 // MSN is a Media Sequence Number, it starts at 0 for the first segment and

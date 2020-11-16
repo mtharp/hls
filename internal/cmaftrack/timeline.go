@@ -87,7 +87,10 @@ func (t *Timeline) flush(final bool) error {
 		return fmt.Errorf("current segment %d is out of bounds (%d to %d)", t.curSeg, t.baseSeg, t.baseSeg+int64(len(t.segments))-1)
 	}
 	current := t.segments[i]
-	tf := t.frag.Fragment()
+	tf, err := t.frag.Fragment()
+	if err != nil {
+		return err
+	}
 	if _, err := current.Write(tf.Bytes); err != nil {
 		return err
 	}
