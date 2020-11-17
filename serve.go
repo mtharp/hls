@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 // serve the HLS playlist and segments
@@ -15,6 +16,10 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	// filename is prefixed with track ID, or 'm' for main playlist
 	bn := path.Base(req.URL.Path)
+	if bn == "time" {
+		serveTime(rw)
+		return
+	}
 	track := bn[0]
 	bn = bn[1:]
 	if track == 'm' {
@@ -79,4 +84,9 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	http.NotFound(rw, req)
 	return
+}
+
+func serveTime(rw http.ResponseWriter) {
+	rw.Header().Set("Cache-Control", "max-age=0, no-cache, no-store")
+	rw.Write([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
 }

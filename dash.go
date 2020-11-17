@@ -22,6 +22,10 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 		MaxSegmentDuration:    dashmpd.Duration{Duration: p.InitialDuration},
 		TimeShiftBufferDepth:  dashmpd.Duration{Duration: p.BufferLength},
 		Period:                []dashmpd.Period{{ID: "p0"}},
+		UTCTiming: &dashmpd.UTCTiming{
+			Scheme: "urn:mpeg:dash:utc:http-xsdate:2014",
+			Value:  "time",
+		},
 	}
 	if p.mpd.MaxSegmentDuration.Duration == 0 {
 		p.mpd.MaxSegmentDuration.Duration = defaultInitialDuration
@@ -46,6 +50,10 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 }
 
 func (p *Publisher) updateMPD(initialDur time.Duration) {
+	fragLen := p.FragmentLength
+	if fragLen <= 0 {
+		fragLen = defaultFragmentLength
+	}
 	p.mpd.PublishTime = time.Now().UTC().Round(time.Second)
 	p.mpd.MaxSegmentDuration = dashmpd.Duration{Duration: initialDur}
 	for trackID, track := range p.tracks {
@@ -54,6 +62,8 @@ func (p *Publisher) updateMPD(initialDur time.Duration) {
 		timeScale := track.frag.TimeScale()
 		aset := &p.mpd.Period[0].AdaptationSet[trackID]
 		aset.SegmentTemplate.StartNumber = int(p.baseMSN)
+		aset.SegmentTemplate.AvailabilityTimeComplete = "false"
+		aset.SegmentTemplate.AvailabilityTimeOffset = (initialDur - fragLen).Seconds()
 		tl := aset.SegmentTemplate.SegmentTimeline
 		tl.Segments = tl.Segments[:0]
 		for i, seg := range track.segments {

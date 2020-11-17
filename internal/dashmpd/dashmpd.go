@@ -18,7 +18,8 @@ type MPD struct {
 	MinBufferTime         Duration  `xml:"minBufferTime,attr"`
 	TimeShiftBufferDepth  Duration  `xml:"timeShiftBufferDepth,attr"`
 
-	Period []Period
+	Period    []Period
+	UTCTiming *UTCTiming
 }
 
 type Period struct {
@@ -81,4 +82,9 @@ type Representation struct {
 type AudioChannelConfiguration struct {
 	SchemeID string `xml:"schemeIdUri,attr"`
 	Value    int    `xml:"value,attr"`
+}
+
+type UTCTiming struct {
+	Scheme string `xml:"schemeIdUri,attr"`
+	Value  string `xml:"value,attr"`
 }
