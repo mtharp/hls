@@ -17,6 +17,7 @@ type Fragmenter interface {
 	av.PacketWriter
 	Fragment() (Fragment, error)
 	Duration() time.Duration
+	TimeScale() uint32
 	MovieHeader() (filename, contentType string, contents []byte)
 	NewSegment()
 }

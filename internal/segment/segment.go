@@ -42,7 +42,7 @@ func New(name Name, workDir string, start time.Duration, dcn bool, programTime t
 		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
 	var err error
-	s.f, err = ioutil.TempFile(workDir, name.Segment(0))
+	s.f, err = ioutil.TempFile(workDir, name.String())
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,11 @@ func (s *Segment) Parts() int { return len(s.parts) }
 // Size returns how many bytes are currently in the segment
 func (s *Segment) Size() int64 { return s.size }
 
+// Start returns the time at which the segment begins
+func (s *Segment) Start() time.Duration {
+	return s.start
+}
+
 // Finalize a live segment, marking that no more parts will be added
 func (s *Segment) Finalize(nextSegment time.Duration) {
 	s.mu.Lock()
@@ -102,7 +107,7 @@ func (s *Segment) Release() {
 }
 
 // Format a playlist fragment for this segment
-func (s *Segment) Format(b *bytes.Buffer, includeParts bool, trackID int) {
+func (s *Segment) Format(b *bytes.Buffer, includeParts bool, trackID int, pid string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.final && (!includeParts || len(s.parts) == 0) {
@@ -120,11 +125,11 @@ func (s *Segment) Format(b *bytes.Buffer, includeParts bool, trackID int) {
 			if part.Independent {
 				independent = "INDEPENDENT=YES,"
 			}
-			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s\"\n",
-				part.Duration.Seconds(), independent, s.name.Part(trackID, i))
+			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%d%s%s\"\n",
+				part.Duration.Seconds(), independent, trackID, pid, s.name.Part(i))
 		}
 	}
 	if s.final {
-		fmt.Fprintf(b, "#EXTINF:%.f,\n%s\n", s.dur.Seconds(), s.name.Segment(trackID))
+		fmt.Fprintf(b, "#EXTINF:%f,\n%d%s%s\n", s.dur.Seconds(), trackID, pid, s.name.String())
 	}
 }

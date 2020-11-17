@@ -10,15 +10,11 @@ import (
 )
 
 func (t *Timeline) ServeInit(rw http.ResponseWriter, req *http.Request) {
-	if t.cd.Type().IsVideo() {
-		rw.Header().Set("Content-Type", "video/mp4")
-	} else {
-		rw.Header().Set("Content-Type", "audio/mp4")
-	}
+	_, ctype, blob := t.frag.MovieHeader()
+	rw.Header().Set("Content-Type", ctype)
 	// rw.Header().Set("Cache-Control", "public, immutable, max-age=3600")
 	rw.Header().Set("Cache-Control", "no-cache, no-store, max-age=0")
-	r := bytes.NewReader(t.frag.MovieHeader())
-	http.ServeContent(rw, req, "", time.Time{}, r)
+	http.ServeContent(rw, req, "", time.Time{}, bytes.NewReader(blob))
 }
 
 func (t *Timeline) ServeSegment(rw http.ResponseWriter, req *http.Request, segNum int64) {

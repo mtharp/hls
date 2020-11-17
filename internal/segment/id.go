@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Predefined name generators
@@ -17,17 +16,12 @@ var (
 type NameGenerator struct {
 	Suffix      string
 	ContentType string
-	zero        int64
 	next        int64
 }
 
 // Next returns the filename of the next segment
 func (n *NameGenerator) Next() Name {
-	if n.zero == 0 {
-		n.zero = time.Now().UnixNano()
-		n.next = n.zero
-	}
-	v := strconv.FormatInt(n.next, 36)
+	v := strconv.FormatInt(n.next, 10)
 	n.next++
 	return Name{v, n.Suffix, n.ContentType}
 }
@@ -35,12 +29,11 @@ func (n *NameGenerator) Next() Name {
 // Parser parses segment filenames. It is safe for concurrent use.
 type Parser struct {
 	Suffix string
-	zero   int64
 }
 
 // Parser returns a snapshot that can be used to concurrently parse segment filenames.
 func (n *NameGenerator) Parser() Parser {
-	return Parser{Suffix: n.Suffix, zero: n.zero}
+	return Parser{Suffix: n.Suffix}
 }
 
 // Parse extracts the MSN and part number from a filename
@@ -55,11 +48,11 @@ func (p Parser) Parse(name string) (id PartMSN, ok bool) {
 		id.Part = int(part)
 		name = name[:k]
 	}
-	num, err := strconv.ParseInt(name, 36, 64)
+	num, err := strconv.ParseInt(name, 10, 64)
 	if err != nil {
 		return
 	}
-	id.MSN = MSN(num - p.zero)
+	id.MSN = MSN(num)
 	if id.MSN < 0 {
 		return
 	}
@@ -72,13 +65,13 @@ type Name struct {
 }
 
 // Segment returns the filename of the segment
-func (n Name) Segment(trackID int) string {
-	return fmt.Sprintf("%d%s%s", trackID, n.base, n.suffix)
+func (n Name) String() string {
+	return fmt.Sprintf("%s%s", n.base, n.suffix)
 }
 
 // Part returns the filename of a segment part
-func (n Name) Part(trackID, part int) string {
-	return fmt.Sprintf("%d%s.%d%s", trackID, n.base, part, n.suffix)
+func (n Name) Part(part int) string {
+	return fmt.Sprintf("%s.%d%s", n.base, part, n.suffix)
 }
 
 // MSN is a Media Sequence Number, it starts at 0 for the first segment and

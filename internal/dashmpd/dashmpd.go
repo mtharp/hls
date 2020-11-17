@@ -13,19 +13,12 @@ type MPD struct {
 
 	AvailabilityStartTime time.Time `xml:"availabilityStartTime,attr"`
 	PublishTime           time.Time `xml:"publishTime,attr"`
+	MinimumUpdatePeriod   Duration  `xml:"minimumUpdatePeriod,attr"`
 	MaxSegmentDuration    Duration  `xml:"maxSegmentDuration,attr"`
 	MinBufferTime         Duration  `xml:"minBufferTime,attr"`
 	TimeShiftBufferDepth  Duration  `xml:"timeShiftBufferDepth,attr"`
 
-	BaseURL *BaseURL
-	Period  []Period
-}
-
-type BaseURL struct {
-	URL string `xml:",cdata"`
-
-	AvailabilityTimeComplete bool    `xml:"availabilityTimeComplete,attr"`
-	AvailabilityTimeOffset   float64 `xml:"availabilityTimeOffset,attr"`
+	Period []Period
 }
 
 type Period struct {
@@ -49,7 +42,7 @@ type AdaptationSet struct {
 }
 
 type SegmentTemplate struct {
-	Duration       int    `xml:"duration,attr"`
+	Duration       int    `xml:"duration,attr,omitempty"`
 	Initialization string `xml:"initialization,attr"`
 	Media          string `xml:"media,attr"`
 	StartNumber    int    `xml:"startNumber,attr"`
@@ -57,6 +50,18 @@ type SegmentTemplate struct {
 
 	AvailabilityTimeComplete string  `xml:"availabilityTimeComplete,attr,omitempty"`
 	AvailabilityTimeOffset   float64 `xml:"availabilityTimeOffset,attr,omitempty"`
+
+	SegmentTimeline *SegmentTimeline
+}
+
+type SegmentTimeline struct {
+	Segments []Segment `xml:"S"`
+}
+
+type Segment struct {
+	Time     uint64 `xml:"t,attr,omitempty"`
+	Duration int    `xml:"d,attr,omitempty"`
+	Repeat   int    `xml:"r,attr,omitempty"`
 }
 
 type Representation struct {
