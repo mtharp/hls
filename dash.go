@@ -12,6 +12,7 @@ import (
 	"github.com/nareix/joy4/av"
 )
 
+// populate a DASH MPD from codec data
 func (p *Publisher) initMPD(streams []av.CodecData) {
 	p.mpd = dashmpd.MPD{
 		ID:                    "m" + p.pid,
@@ -49,6 +50,7 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 	}
 }
 
+// update MPD with current set of available segments
 func (p *Publisher) updateMPD(initialDur time.Duration) {
 	fragLen := p.FragmentLength
 	if fragLen <= 0 {
@@ -56,43 +58,8 @@ func (p *Publisher) updateMPD(initialDur time.Duration) {
 	}
 	p.mpd.PublishTime = time.Now().UTC().Round(time.Second)
 	p.mpd.MaxSegmentDuration = dashmpd.Duration{Duration: initialDur}
-	for trackID, track := range p.tracks {
-		var totalSize int64
-		var totalDur float64
-		timeScale := track.frag.TimeScale()
-		aset := &p.mpd.Period[0].AdaptationSet[trackID]
-		aset.SegmentTemplate.StartNumber = int(p.baseMSN)
-		aset.SegmentTemplate.AvailabilityTimeComplete = "false"
-		aset.SegmentTemplate.AvailabilityTimeOffset = (initialDur - fragLen).Seconds()
-		tl := aset.SegmentTemplate.SegmentTimeline
-		tl.Segments = tl.Segments[:0]
-		for i, seg := range track.segments {
-			start := seg.Start()
-			startDTS := timescale.ToScale(seg.Start(), timeScale)
-			dur := seg.Duration()
-			if dur == 0 {
-				dur = initialDur
-			}
-			durTS := int(timescale.ToScale(start+dur, timeScale) - startDTS)
-			totalSize += seg.Size()
-			totalDur += dur.Seconds()
-
-			prev := len(tl.Segments) - 1
-			if prev >= 0 && tl.Segments[prev].Duration == durTS {
-				// repeat previous segment
-				tl.Segments[prev].Repeat++
-			} else {
-				seg := dashmpd.Segment{Duration: durTS}
-				if i == 0 {
-					// first segment has absolute time
-					seg.Time = startDTS
-				}
-				tl.Segments = append(tl.Segments, seg)
-			}
-		}
-		if totalDur != 0 {
-			aset.Representation[0].Bandwidth = int(float64(totalSize) / totalDur)
-		}
+	for trackID := range p.tracks {
+		p.updateMPDTrack(trackID, initialDur, fragLen)
 	}
 	blob, _ := xml.Marshal(p.mpd)
 	blob = append([]byte(xml.Header), blob...)
@@ -102,6 +69,51 @@ func (p *Publisher) updateMPD(initialDur time.Duration) {
 		etag:  "\"" + hex.EncodeToString(d.Sum(nil)[:16]) + "\"",
 		value: blob,
 	})
+}
+
+// update MPD with a single track's segments
+func (p *Publisher) updateMPDTrack(trackID int, initialDur, fragLen time.Duration) {
+	track := p.tracks[trackID]
+	var totalSize int64
+	var totalDur float64
+	timeScale := track.frag.TimeScale()
+	aset := &p.mpd.Period[0].AdaptationSet[trackID]
+	aset.SegmentTemplate.StartNumber = int(p.baseMSN)
+	aset.SegmentTemplate.AvailabilityTimeComplete = "false"
+	aset.SegmentTemplate.AvailabilityTimeOffset = (initialDur - fragLen).Seconds()
+	if trackID == p.vidx {
+		aset.MaxFrameRate = p.rate.Rate()
+		aset.Representation[0].FrameRate = aset.MaxFrameRate
+	}
+	tl := aset.SegmentTemplate.SegmentTimeline
+	tl.Segments = tl.Segments[:0]
+	for i, seg := range track.segments {
+		start := seg.Start()
+		startDTS := timescale.ToScale(seg.Start(), timeScale)
+		dur := seg.Duration()
+		if dur == 0 {
+			dur = initialDur
+		}
+		durTS := int(timescale.ToScale(start+dur, timeScale) - startDTS)
+		totalSize += seg.Size()
+		totalDur += dur.Seconds()
+
+		prev := len(tl.Segments) - 1
+		if prev >= 0 && tl.Segments[prev].Duration == durTS {
+			// repeat previous segment
+			tl.Segments[prev].Repeat++
+		} else {
+			seg := dashmpd.Segment{Duration: durTS}
+			if i == 0 {
+				// first segment has absolute time
+				seg.Time = startDTS
+			}
+			tl.Segments = append(tl.Segments, seg)
+		}
+	}
+	if totalDur != 0 {
+		aset.Representation[0].Bandwidth = int(float64(totalSize) / totalDur)
+	}
 }
 
 type cachedMPD struct {
@@ -114,18 +126,15 @@ func adaptationSet(cd av.CodecData) dashmpd.AdaptationSet {
 	case av.VideoCodecData:
 		return dashmpd.AdaptationSet{
 			ContentType:      "video",
-			MaxFrameRate:     60, // TODO
 			MaxWidth:         cd.Width(),
 			MaxHeight:        cd.Height(),
 			SegmentAlignment: true,
 			Representation: []dashmpd.Representation{{
-				ID:        "v0",
-				FrameRate: 30, // TODO
-				Width:     cd.Width(),
-				Height:    cd.Height(),
-				Codecs:    "avc1.64001f", // TODO
-				Bandwidth: 1500000,       // TODO
-				MimeType:  "video/mp4",
+				ID:       "v0",
+				Width:    cd.Width(),
+				Height:   cd.Height(),
+				Codecs:   "avc1.64001f", // TODO
+				MimeType: "video/mp4",
 			}},
 		}
 	case av.AudioCodecData:
@@ -136,7 +145,6 @@ func adaptationSet(cd av.CodecData) dashmpd.AdaptationSet {
 				ID:                "a0",
 				AudioSamplingRate: cd.SampleRate(),
 				Codecs:            "mp4a.40.2", // TODO
-				Bandwidth:         128000,      // TODO
 				MimeType:          "audio/mp4",
 				AudioChannelConfiguration: &dashmpd.AudioChannelConfiguration{
 					SchemeID: "urn:mpeg:dash:23003:3:audio_channel_configuration:2011",

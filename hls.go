@@ -11,6 +11,7 @@ import (
 	"eaglesong.dev/hls/internal/dashmpd"
 	"eaglesong.dev/hls/internal/fmp4"
 	"eaglesong.dev/hls/internal/fragment"
+	"eaglesong.dev/hls/internal/ratedetect"
 	"eaglesong.dev/hls/internal/segment"
 	"github.com/nareix/joy4/av"
 )
@@ -57,6 +58,7 @@ type Publisher struct {
 	nextDCN bool        // if next segment is discontinuous
 	state   atomic.Value
 	vidx    int
+	rate    ratedetect.Detector
 
 	subsMu sync.Mutex
 	subs   subMap
@@ -125,6 +127,7 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	if int(pkt.Idx) != p.vidx {
 		return nil
 	}
+	p.rate.Append(pkt.Packet.Time)
 	fragLen := p.FragmentLength
 	if fragLen <= 0 {
 		fragLen = defaultFragmentLength

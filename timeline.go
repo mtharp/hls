@@ -1,7 +1,6 @@
 package hls
 
 import (
-	"log"
 	"time"
 
 	"eaglesong.dev/hls/internal/segment"
@@ -17,7 +16,6 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		for _, track := range p.tracks {
 			track.current().Finalize(start)
 		}
-		log.Println("Key:", p.tracks[p.vidx].current().Duration())
 	}
 	initialDur := p.targetDuration()
 	name := p.names.Next()

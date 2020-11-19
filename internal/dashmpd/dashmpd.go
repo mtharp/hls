@@ -3,6 +3,8 @@ package dashmpd
 import (
 	"encoding/xml"
 	"time"
+
+	"eaglesong.dev/hls/internal/ratedetect"
 )
 
 type MPD struct {
@@ -30,13 +32,13 @@ type Period struct {
 }
 
 type AdaptationSet struct {
-	ContentType      string `xml:"contentType,attr"`
-	Lang             string `xml:"lang,attr,omitempty"`
-	SegmentAlignment bool   `xml:"segmentAlignment,attr"`
-	MaxFrameRate     int    `xml:"maxFrameRate,attr,omitempty"`
-	MaxWidth         int    `xml:"maxWidth,attr,omitempty"`
-	MaxHeight        int    `xml:"maxHeight,attr,omitempty"`
-	PAR              string `xml:"par,attr,omitempty"`
+	ContentType      string          `xml:"contentType,attr"`
+	Lang             string          `xml:"lang,attr,omitempty"`
+	SegmentAlignment bool            `xml:"segmentAlignment,attr"`
+	MaxFrameRate     ratedetect.Rate `xml:"maxFrameRate,attr,omitempty"`
+	MaxWidth         int             `xml:"maxWidth,attr,omitempty"`
+	MaxHeight        int             `xml:"maxHeight,attr,omitempty"`
+	PAR              string          `xml:"par,attr,omitempty"`
 
 	SegmentTemplate SegmentTemplate
 	Representation  []Representation
@@ -66,15 +68,15 @@ type Segment struct {
 }
 
 type Representation struct {
-	ID                string  `xml:"id,attr"`
-	AudioSamplingRate int     `xml:"audioSamplingRate,attr,omitempty"`
-	Bandwidth         int     `xml:"bandwidth,attr"`
-	Codecs            string  `xml:"codecs,attr"`
-	MimeType          string  `xml:"mimeType,attr"`
-	FrameRate         float64 `xml:"frameRate,attr,omitempty"`
-	Width             int     `xml:"width,attr,omitempty"`
-	Height            int     `xml:"height,attr,omitempty"`
-	SAR               string  `xml:"sar,attr,omitempty"`
+	ID                string          `xml:"id,attr"`
+	AudioSamplingRate int             `xml:"audioSamplingRate,attr,omitempty"`
+	Bandwidth         int             `xml:"bandwidth,attr"`
+	Codecs            string          `xml:"codecs,attr"`
+	MimeType          string          `xml:"mimeType,attr"`
+	FrameRate         ratedetect.Rate `xml:"frameRate,attr,omitempty"`
+	Width             int             `xml:"width,attr,omitempty"`
+	Height            int             `xml:"height,attr,omitempty"`
+	SAR               string          `xml:"sar,attr,omitempty"`
 
 	AudioChannelConfiguration *AudioChannelConfiguration
 }
