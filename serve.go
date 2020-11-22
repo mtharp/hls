@@ -22,7 +22,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	track := bn[0]
 	bn = bn[1:]
-	if track == 'm' {
+	if track == 'm' || track == 'i' {
 		switch path.Ext(bn) {
 		case ".m3u8":
 			// main playlist

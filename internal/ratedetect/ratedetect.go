@@ -66,6 +66,9 @@ type Rate struct {
 
 // MarshalXMLAttr formats the frame rate as an integer, ratio or float for DASH manifests
 func (r Rate) MarshalXMLAttr(name xml.Name) (attr xml.Attr, err error) {
+	if r.Numerator == 0 && r.Float == 0 {
+		return
+	}
 	attr.Name = name
 	switch r.Denominator {
 	case 0:

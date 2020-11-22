@@ -96,6 +96,10 @@ func (f *TrackFragmenter) TimeScale() uint32 {
 func (f *TrackFragmenter) Fragment() (fragment.Fragment, error) {
 	dur := f.Duration()
 	tf := f.makeFragment()
+	if tf.trackFrag == nil {
+		// not enough packets received
+		return fragment.Fragment{}, nil
+	}
 	f.seqNum++
 	initial := !f.shdrw
 	f.shdrw = true

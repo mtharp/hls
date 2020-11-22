@@ -36,7 +36,7 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 	}
 	for trackID, cd := range streams {
 		frag := p.tracks[trackID].frag
-		aset := adaptationSet(cd)
+		aset := adaptationSet(cd, p.tracks[trackID].codecTag)
 		aset.SegmentTemplate = dashmpd.SegmentTemplate{
 			Timescale:       int(frag.TimeScale()),
 			Media:           fmt.Sprintf("%d%s$Number$%s", trackID, p.pid, p.names.Suffix),
@@ -121,7 +121,7 @@ type cachedMPD struct {
 	value []byte
 }
 
-func adaptationSet(cd av.CodecData) dashmpd.AdaptationSet {
+func adaptationSet(cd av.CodecData, codecTag string) dashmpd.AdaptationSet {
 	switch cd := cd.(type) {
 	case av.VideoCodecData:
 		return dashmpd.AdaptationSet{
@@ -133,10 +133,11 @@ func adaptationSet(cd av.CodecData) dashmpd.AdaptationSet {
 				ID:       "v0",
 				Width:    cd.Width(),
 				Height:   cd.Height(),
-				Codecs:   "avc1.64001f", // TODO
+				Codecs:   codecTag,
 				MimeType: "video/mp4",
 			}},
 		}
+
 	case av.AudioCodecData:
 		return dashmpd.AdaptationSet{
 			ContentType:      "audio",
@@ -144,7 +145,7 @@ func adaptationSet(cd av.CodecData) dashmpd.AdaptationSet {
 			Representation: []dashmpd.Representation{{
 				ID:                "a0",
 				AudioSamplingRate: cd.SampleRate(),
-				Codecs:            "mp4a.40.2", // TODO
+				Codecs:            codecTag,
 				MimeType:          "audio/mp4",
 				AudioChannelConfiguration: &dashmpd.AudioChannelConfiguration{
 					SchemeID: "urn:mpeg:dash:23003:3:audio_channel_configuration:2011",

@@ -4,19 +4,23 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
 func (p *Publisher) serveMainPlaylist(rw http.ResponseWriter, req *http.Request, state hlsState) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "#EXTM3U")
+	var codecs []string
 	for trackID := range state.tracks {
+		codecs = append(codecs, p.tracks[trackID].codecTag)
 		if trackID == p.vidx {
 			continue
 		}
 		fmt.Fprintf(&b, "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"audio\",DEFAULT=YES,URI=\"%d%s.m3u8\"\n", trackID, p.pid)
 	}
-	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AUDIO=\"audio\"\n%d%s.m3u8\n", state.bandwidth, p.vidx, p.pid)
+	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AUDIO=\"audio\",CODECS=\"%s\"\n%d%s.m3u8\n",
+		state.bandwidth, strings.Join(codecs, ","), p.vidx, p.pid)
 	rw.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	http.ServeContent(rw, req, "", time.Time{}, bytes.NewReader(b.Bytes()))
 }

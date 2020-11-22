@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"eaglesong.dev/hls/internal/codectag"
 	"eaglesong.dev/hls/internal/dashmpd"
 	"eaglesong.dev/hls/internal/fmp4"
 	"eaglesong.dev/hls/internal/fragment"
@@ -17,21 +18,9 @@ import (
 )
 
 const (
-	defaultFragmentLength  = 500 * time.Millisecond
-	defaultInitialDuration = 5 * time.Second
-	defaultBufferLength    = 60 * time.Second
-	slopOffset             = time.Millisecond
+	defaultFragmentLength = 500 * time.Millisecond
+	slopOffset            = time.Millisecond
 )
-
-// // Muxer identifies what type of container to use for the video stream
-// type Muxer int
-
-// const (
-// 	// FMP4 uses a fragmented MP4 muxer, and is the default.
-// 	FMP4 = Muxer(iota)
-// 	// MPEG2TS uses a transport stream muxer. Better compatibilty with legacy players, but LL-HLS may not work.
-// 	MPEG2TS
-// )
 
 // Publisher implements a live HLS stream server
 type Publisher struct {
@@ -46,25 +35,25 @@ type Publisher struct {
 	WorkDir string
 	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
 	Prefetch bool
-	// Muxer selects which type of container to use for the video stream
-	// Muxer Muxer
 
-	pid string
-	// hdrExt   string
+	pid     string // unique filename for this instance of the stream
 	tracks  []*track
+	vidx    int // index of video track
 	names   segment.NameGenerator
 	baseMSN segment.MSN // MSN of segments[0][0]
-	baseDCN int         // number of previous discontinuities
-	nextDCN bool        // if next segment is discontinuous
+
+	// hls
+	baseDCN int  // number of previous discontinuities
+	nextDCN bool // if next segment is discontinuous
 	state   atomic.Value
-	vidx    int
+
+	// dash
 	rate    ratedetect.Detector
+	mpd     dashmpd.MPD
+	mpdsnap atomic.Value
 
 	subsMu sync.Mutex
 	subs   subMap
-
-	mpd     dashmpd.MPD
-	mpdsnap atomic.Value
 
 	// Precreate is deprecated and no longer used
 	Precreate int
@@ -73,6 +62,7 @@ type Publisher struct {
 type track struct {
 	segments []*segment.Segment
 	frag     fragment.Fragmenter
+	codecTag string
 }
 
 // WriteHeader initializes the streams' codec data and must be called before the first WritePacket
@@ -91,10 +81,13 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		if err != nil {
 			return fmt.Errorf("stream %d: %w", i, err)
 		}
-		p.tracks[i] = &track{frag: frag}
+		tag, err := codectag.Tag(cd)
+		if err != nil {
+			return fmt.Errorf("stream %d: %w", i, err)
+		}
+		p.tracks[i] = &track{frag: frag, codecTag: tag}
 	}
 	p.initMPD(streams)
-
 	return nil
 }
 
@@ -152,13 +145,20 @@ func (p *Publisher) Discontinuity() {
 	p.nextDCN = true
 }
 
-// Name returns the unique name of the playlist of this instance of the stream
-func (p *Publisher) Name() string {
+// Playlist returns the filename of the HLS main playlist
+func (p *Publisher) Playlist() string {
 	if p == nil {
 		return ""
 	}
 	return "m" + p.pid + ".m3u8"
-	// return "m" + p.pid + ".mpd"
+}
+
+// MPD returns the filename of the DASH MPD
+func (p *Publisher) MPD() string {
+	if p == nil {
+		return ""
+	}
+	return "m" + p.pid + ".mpd"
 }
 
 // Close frees resources associated with the publisher

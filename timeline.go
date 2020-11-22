@@ -6,6 +6,11 @@ import (
 	"eaglesong.dev/hls/internal/segment"
 )
 
+const (
+	defaultInitialDuration = 5 * time.Second
+	defaultBufferLength    = 60 * time.Second
+)
+
 // start a new segment
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
 	if len(p.tracks[p.vidx].segments) != 0 {
@@ -89,8 +94,9 @@ func (p *Publisher) flush() error {
 		f, err := track.frag.Fragment()
 		if err != nil {
 			return err
+		} else if f.Bytes != nil {
+			track.current().Append(f)
 		}
-		track.current().Append(f)
 	}
 	return nil
 }
