@@ -52,13 +52,16 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 
 // update MPD with current set of available segments
 func (p *Publisher) updateMPD(initialDur time.Duration) {
+	if p.Mode == ModeSingleTrack {
+		return
+	}
 	fragLen := p.FragmentLength
 	if fragLen <= 0 {
 		fragLen = defaultFragmentLength
 	}
 	p.mpd.PublishTime = time.Now().UTC().Round(time.Second)
 	p.mpd.MaxSegmentDuration = dashmpd.Duration{Duration: initialDur}
-	for trackID := range p.tracks {
+	for trackID := range p.tracks[:p.streams] {
 		p.updateMPDTrack(trackID, initialDur, fragLen)
 	}
 	blob, _ := xml.Marshal(p.mpd)

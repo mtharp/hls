@@ -9,10 +9,18 @@ import (
 )
 
 func (p *Publisher) serveMainPlaylist(rw http.ResponseWriter, req *http.Request, state hlsState) {
+	if p.comboID >= 0 {
+		// serve combined playlist instead
+		p.servePlaylist(rw, req, state, p.comboID)
+		return
+	}
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "#EXTM3U")
 	var codecs []string
 	for trackID := range state.tracks {
+		if trackID == p.comboID {
+			continue
+		}
 		codecs = append(codecs, p.tracks[trackID].codecTag)
 		if trackID == p.vidx {
 			continue

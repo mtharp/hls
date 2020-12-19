@@ -23,6 +23,9 @@ func (f *TrackFragmenter) Track() (*fmp4io.Track, error) {
 	switch cd := f.codecData.(type) {
 	case h264parser.CodecData:
 		f.timeScale = 90000
+		cd.RecordInfo.LengthSizeMinusOne = 3
+		conf := make([]byte, cd.RecordInfo.Len())
+		cd.RecordInfo.Marshal(conf)
 		sample.SampleDesc.AVC1Desc = &fmp4io.AVC1Desc{
 			DataRefIdx:           1,
 			HorizontalResolution: 72,
@@ -32,7 +35,7 @@ func (f *TrackFragmenter) Track() (*fmp4io.Track, error) {
 			FrameCount:           1,
 			Depth:                24,
 			ColorTableId:         -1,
-			Conf:                 &fmp4io.AVC1Conf{Data: cd.AVCDecoderConfRecordBytes()},
+			Conf:                 &fmp4io.AVC1Conf{Data: conf},
 		}
 	case aacparser.CodecData:
 		f.timeScale = 48000

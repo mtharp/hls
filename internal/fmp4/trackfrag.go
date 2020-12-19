@@ -1,7 +1,6 @@
 package fmp4
 
 import (
-	"errors"
 	"time"
 
 	"eaglesong.dev/hls/internal/fmp4/fmp4io"
@@ -45,7 +44,7 @@ func NewTrack(codecData av.CodecData) (*TrackFragmenter, error) {
 
 // WritePacket appends a packet to the fragmenter
 func (f *TrackFragmenter) WritePacket(pkt av.Packet) error {
-	switch cd := f.codecData.(type) {
+	switch f.codecData.(type) {
 	case h264parser.CodecData:
 		// reformat NALUs as AVCC
 		nalus, typ := h264parser.SplitNALUs(pkt.Data)
@@ -56,21 +55,7 @@ func (f *TrackFragmenter) WritePacket(pkt av.Packet) error {
 		b := make([]byte, 0, len(pkt.Data)+3*len(nalus))
 		for _, nalu := range nalus {
 			j := len(nalu)
-			switch cd.RecordInfo.LengthSizeMinusOne {
-			case 3:
-				b = append(b, byte(j>>24))
-				fallthrough
-			case 2:
-				b = append(b, byte(j>>16))
-				fallthrough
-			case 1:
-				b = append(b, byte(j>>8))
-				fallthrough
-			case 0:
-				b = append(b, byte(j))
-			default:
-				return errors.New("invalid AVCC length size")
-			}
+			b = append(b, byte(j>>24), byte(j>>16), byte(j>>8), byte(j))
 			b = append(b, nalu...)
 		}
 		pkt.Data = b

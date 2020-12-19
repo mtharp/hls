@@ -13,7 +13,7 @@ const (
 
 // start a new segment
 func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error {
-	if len(p.tracks[p.vidx].segments) != 0 {
+	if len(p.primary.segments) != 0 {
 		// flush and finalize previous segment
 		if err := p.flush(); err != nil {
 			return err
@@ -26,7 +26,6 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	name := p.names.Next()
 	for _, track := range p.tracks {
 		track.frag.NewSegment()
-		var err error
 		seg, err := segment.New(name, p.WorkDir, start, p.nextDCN, programTime)
 		if err != nil {
 			return err
@@ -43,9 +42,8 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 
 // calculate the longest segment duration
 func (p *Publisher) targetDuration() time.Duration {
-	t := p.tracks[p.vidx]
-	maxTime := t.frag.Duration() // pending segment duration
-	for _, seg := range t.segments {
+	maxTime := p.primary.frag.Duration() // pending segment duration
+	for _, seg := range p.primary.segments {
 		if dur := seg.Duration(); dur > maxTime {
 			maxTime = dur
 		}
@@ -70,13 +68,13 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	if keepSegments < 10 {
 		keepSegments = 10
 	}
-	n := len(p.tracks[p.vidx].segments) - keepSegments
+	n := len(p.primary.segments) - keepSegments
 	if n <= 0 {
 		return
 	}
-	for trackID, track := range p.tracks {
+	for _, track := range p.tracks {
 		for _, seg := range track.segments[:n] {
-			if trackID == p.vidx {
+			if track == p.primary {
 				p.baseMSN++
 				if seg.Discontinuous() {
 					p.baseDCN++
@@ -95,7 +93,9 @@ func (p *Publisher) flush() error {
 		if err != nil {
 			return err
 		} else if f.Bytes != nil {
-			track.current().Append(f)
+			if err := track.current().Append(f); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

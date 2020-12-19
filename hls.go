@@ -22,8 +22,25 @@ const (
 	slopOffset            = time.Millisecond
 )
 
+// Mode defines the operating mode of the publisher
+type Mode int
+
+const (
+	// ModeSingleTrack uses a single HLS playlist and track. DASH is not available. This is the default.
+	ModeSingleTrack Mode = iota
+	// ModeSeparateTracks puts audio and video in separate tracks for both HLS
+	// and DASH. HLS uses a master playlist and may not be compatible with some
+	// devices.
+	ModeSeparateTracks
+	// ModeSingleAndSeparate uses a single track for HLS and separate tracks for
+	// DASH. This requires twice as much memory.
+	ModeSingleAndSeparate
+)
+
 // Publisher implements a live HLS stream server
 type Publisher struct {
+	// Mode defines the operating mode of the publisher
+	Mode Mode
 	// InitialDuration is a guess for the TARGETDURATION field in the playlist,
 	// used until the first segment is complete. Defaults to 5s.
 	InitialDuration time.Duration
@@ -38,7 +55,11 @@ type Publisher struct {
 
 	pid     string // unique filename for this instance of the stream
 	tracks  []*track
-	vidx    int // index of video track
+	combo   *track
+	primary *track
+	comboID int // index into tracks of combo track
+	vidx    int // packet Idx of video stream
+	streams int // number of tracks in source
 	names   segment.NameGenerator
 	baseMSN segment.MSN // MSN of segments[0][0]
 
@@ -72,22 +93,53 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 	}
 	p.pid = strconv.FormatInt(time.Now().Unix(), 36)
 	p.names = segment.MP4Generator
-	p.tracks = make([]*track, len(streams))
+	p.streams = len(streams)
+	switch p.Mode {
+	case ModeSingleTrack:
+		p.tracks = make([]*track, 1)
+		p.comboID = 0
+	case ModeSeparateTracks:
+		p.tracks = make([]*track, len(streams))
+		p.comboID = -1
+	case ModeSingleAndSeparate:
+		p.tracks = make([]*track, len(streams)+1)
+		p.comboID = len(streams)
+	default:
+		return errors.New("invalid setting for publisher mode")
+	}
 	for i, cd := range streams {
 		if cd.Type().IsVideo() {
 			p.vidx = i
 		}
-		frag, err := fmp4.NewTrack(cd)
-		if err != nil {
-			return fmt.Errorf("stream %d: %w", i, err)
-		}
-		tag, err := codectag.Tag(cd)
-		if err != nil {
-			return fmt.Errorf("stream %d: %w", i, err)
-		}
-		p.tracks[i] = &track{frag: frag, codecTag: tag}
 	}
-	p.initMPD(streams)
+	if p.Mode != ModeSingleTrack {
+		// setup separate tracks
+		for i, cd := range streams {
+			frag, err := fmp4.NewTrack(cd)
+			if err != nil {
+				return fmt.Errorf("stream %d: %w", i, err)
+			}
+			tag, err := codectag.Tag(cd)
+			if err != nil {
+				return fmt.Errorf("stream %d: %w", i, err)
+			}
+			p.tracks[i] = &track{frag: frag, codecTag: tag}
+			if i == p.vidx {
+				p.primary = p.tracks[i]
+			}
+		}
+		p.initMPD(streams)
+	}
+	if p.Mode != ModeSeparateTracks {
+		// setup combined track
+		cfrag, err := fmp4.NewMovie(streams)
+		if err != nil {
+			return fmt.Errorf("combined: %w", err)
+		}
+		p.tracks[p.comboID] = &track{frag: cfrag}
+		p.combo = p.tracks[p.comboID]
+		p.primary = p.tracks[p.comboID]
+	}
 	return nil
 }
 
@@ -111,9 +163,15 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 // WriteExtendedPacket publishes a packet with additional metadata
 func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	// enqueue packet to fragmenter
-	t := p.tracks[pkt.Idx]
-	if len(t.segments) != 0 {
-		if err := t.frag.WritePacket(pkt.Packet); err != nil {
+	if p.Mode != ModeSingleTrack {
+		if t := p.tracks[pkt.Idx]; len(t.segments) != 0 {
+			if err := t.frag.WritePacket(pkt.Packet); err != nil {
+				return err
+			}
+		}
+	}
+	if p.Mode != ModeSeparateTracks && len(p.combo.segments) != 0 {
+		if err := p.combo.frag.WritePacket(pkt.Packet); err != nil {
 			return err
 		}
 	}
@@ -130,7 +188,7 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		// duration of the previous frame. so switching segments here will put
 		// this keyframe into the new segment.
 		return p.newSegment(pkt.Time, pkt.ProgramTime)
-	} else if len(t.segments) != 0 && t.frag.Duration() >= fragLen-slopOffset {
+	} else if len(p.primary.segments) != 0 && p.primary.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically
 		if err := p.flush(); err != nil {
 			return err
@@ -150,15 +208,15 @@ func (p *Publisher) Playlist() string {
 	if p == nil {
 		return ""
 	}
-	return "m" + p.pid + ".m3u8"
+	return "main.m3u8"
 }
 
-// MPD returns the filename of the DASH MPD
+// MPD returns the filename of the DASH MPD or "" if it is unavailable
 func (p *Publisher) MPD() string {
-	if p == nil {
+	if p == nil || p.Mode == ModeSingleTrack {
 		return ""
 	}
-	return "m" + p.pid + ".mpd"
+	return "main.mpd"
 }
 
 // Close frees resources associated with the publisher

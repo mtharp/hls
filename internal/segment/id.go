@@ -6,11 +6,8 @@ import (
 	"strings"
 )
 
-// Predefined name generators
-var (
-	MP4Generator     = NameGenerator{Suffix: ".m4s", ContentType: "video/iso.segment"}
-	MPEG2TSGenerator = NameGenerator{Suffix: ".ts", ContentType: "video/MP2T"}
-)
+// MP4Generator generates integer filenames for MPEG DASH tracks
+var MP4Generator = NameGenerator{Suffix: ".m4s", ContentType: "video/iso.segment"}
 
 // NameGenerator creates and parses segment filenames
 type NameGenerator struct {

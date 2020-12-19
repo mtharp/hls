@@ -64,12 +64,12 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 		for i, seg := range track.segments {
 			cursors[i] = seg.Cursor()
 			if seg.Final() {
-				if trackID == p.vidx {
+				if track == p.primary {
 					completeIndex = i
 				}
 				totalSize += seg.Size()
 				totalDur += seg.Duration().Seconds()
-			} else if i == completeIndex+1 && trackID == p.vidx {
+			} else if i == completeIndex+1 && track == p.primary {
 				completeParts = seg.Parts()
 			}
 			includeParts := fragLen > 0 && i >= len(track.segments)-3

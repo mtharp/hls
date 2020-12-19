@@ -63,6 +63,9 @@ func (f *MovieFragmenter) Fragment() (fragment.Fragment, error) {
 			tracks = append(tracks, tf)
 		}
 	}
+	if len(tracks) == 0 {
+		return fragment.Fragment{}, nil
+	}
 	f.seqNum++
 	initial := !f.shdrw
 	f.shdrw = true
@@ -90,4 +93,8 @@ func (f *MovieFragmenter) MovieHeader() (filename, contentType string, blob []by
 // Fragment() should include a leading FTYP header
 func (f *MovieFragmenter) NewSegment() {
 	f.shdrw = false
+}
+
+func (f *MovieFragmenter) TimeScale() uint32 {
+	return 90000
 }
