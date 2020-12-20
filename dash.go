@@ -13,7 +13,7 @@ import (
 )
 
 // populate a DASH MPD from codec data
-func (p *Publisher) initMPD(streams []av.CodecData) {
+func (p *Publisher) initMPD() {
 	p.mpd = dashmpd.MPD{
 		ID:                    "m" + p.pid,
 		Profiles:              "urn:mpeg:dash:profile:isoff-live:2011",
@@ -34,12 +34,12 @@ func (p *Publisher) initMPD(streams []av.CodecData) {
 	if p.mpd.TimeShiftBufferDepth.Duration == 0 {
 		p.mpd.TimeShiftBufferDepth.Duration = defaultBufferLength
 	}
-	for trackID, cd := range streams {
+	for trackID, cd := range p.streams {
 		frag := p.tracks[trackID].frag
 		aset := adaptationSet(cd, p.tracks[trackID].codecTag)
 		aset.SegmentTemplate = dashmpd.SegmentTemplate{
 			Timescale:       int(frag.TimeScale()),
-			Media:           fmt.Sprintf("%d%s$Number$%s", trackID, p.pid, p.names.Suffix),
+			Media:           fmt.Sprintf("%d%s$Number$.m4s", trackID, p.pid),
 			StartNumber:     0,
 			SegmentTimeline: new(dashmpd.SegmentTimeline),
 		}
@@ -61,7 +61,7 @@ func (p *Publisher) updateMPD(initialDur time.Duration) {
 	}
 	p.mpd.PublishTime = time.Now().UTC().Round(time.Second)
 	p.mpd.MaxSegmentDuration = dashmpd.Duration{Duration: initialDur}
-	for trackID := range p.tracks[:p.streams] {
+	for trackID := range p.streams {
 		p.updateMPDTrack(trackID, initialDur, fragLen)
 	}
 	blob, _ := xml.Marshal(p.mpd)

@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	cacheSegment = "max-age=600, public"
-	cachePart    = "max-age=60, public"
+	cacheSegment = "max-age=180, public"
+	cachePart    = "max-age=15, public"
 )
 
 // Cursor facilitiates concurrent access to a Segment
@@ -25,6 +25,18 @@ func (s *Segment) Cursor() Cursor {
 // Valid returns true if the segment exists
 func (c *Cursor) Valid() bool {
 	return c.s != nil
+}
+
+func (s *Segment) setHeaders(rw http.ResponseWriter, cacheControl string) {
+	rw.Header().Set("Cache-Control", cacheControl)
+	ctype := "application/octet-stream"
+	switch s.suf {
+	case ".m4s":
+		ctype = "video/iso.segment"
+	case ".ts":
+		ctype = "video/MP2T"
+	}
+	rw.Header().Set("Content-Type", ctype)
 }
 
 // Serve the segment to a client.
@@ -55,8 +67,7 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 		http.NotFound(rw, req)
 		return
 	}
-	rw.Header().Set("Cache-Control", cc)
-	rw.Header().Set("Content-Type", c.s.name.contentType)
+	c.s.setHeaders(rw, cc)
 	http.ServeContent(rw, req, "", time.Time{}, r)
 }
 
@@ -80,8 +91,7 @@ func (s *Segment) readPartLocked(part int) io.ReadSeeker {
 
 // write parts of an incomplete segment as they become available
 func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
-	rw.Header().Set("Cache-Control", cacheSegment)
-	rw.Header().Set("Content-Type", s.name.contentType)
+	s.setHeaders(rw, cacheSegment)
 	flusher, _ := rw.(http.Flusher)
 	var copied int64
 	var part int

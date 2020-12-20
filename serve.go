@@ -5,6 +5,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"eaglesong.dev/hls/internal/segment"
 )
 
 // serve the HLS playlist and segments
@@ -51,14 +53,14 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		rw.Header().Set("Content-Type", ctype)
 		rw.Write(blob)
 		return
-	case state.parser.Suffix:
+	case ".m4s", ".ts":
 		// media segment
 		if !strings.HasPrefix(bn, p.pid) {
 			http.NotFound(rw, req)
 			return
 		}
 		bn = strings.TrimPrefix(bn, p.pid)
-		msn, ok := state.parser.Parse(bn)
+		msn, ok := segment.ParseName(bn)
 		if !ok {
 			break
 		}

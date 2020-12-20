@@ -2,9 +2,11 @@ package segment
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 //
 // Methods of Segment are not safe for concurrent use. Use Cursor() to get a concurrent accessor.
 type Segment struct {
-	name        Name
+	base, suf   string
 	start       time.Duration
 	dcn         bool
 	programTime string
@@ -31,9 +33,14 @@ type Segment struct {
 }
 
 // New creates a new HLS segment
-func New(name Name, workDir string, start time.Duration, dcn bool, programTime time.Time) (*Segment, error) {
+func New(name, workDir string, start time.Duration, dcn bool, programTime time.Time) (*Segment, error) {
+	i := strings.LastIndexByte(name, '.')
+	if i < 0 {
+		return nil, errors.New("invalid segment basename")
+	}
 	s := &Segment{
-		name:  name,
+		base:  name[:i],
+		suf:   name[i:],
 		start: start,
 		dcn:   dcn,
 	}
@@ -42,7 +49,7 @@ func New(name Name, workDir string, start time.Duration, dcn bool, programTime t
 		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
 	var err error
-	s.f, err = ioutil.TempFile(workDir, name.String())
+	s.f, err = ioutil.TempFile(workDir, name)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +114,7 @@ func (s *Segment) Release() {
 }
 
 // Format a playlist fragment for this segment
-func (s *Segment) Format(b *bytes.Buffer, includeParts bool, trackID int, pid string) {
+func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.final && (!includeParts || len(s.parts) == 0) {
@@ -125,11 +132,11 @@ func (s *Segment) Format(b *bytes.Buffer, includeParts bool, trackID int, pid st
 			if part.Independent {
 				independent = "INDEPENDENT=YES,"
 			}
-			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%d%s%s\"\n",
-				part.Duration.Seconds(), independent, trackID, pid, s.name.Part(i))
+			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s.%d%s\"\n",
+				part.Duration.Seconds(), independent, s.base, i, s.suf)
 		}
 	}
 	if s.final {
-		fmt.Fprintf(b, "#EXTINF:%f,\n%d%s%s\n", s.dur.Seconds(), trackID, pid, s.name.String())
+		fmt.Fprintf(b, "#EXTINF:%f,\n%s%s\n", s.dur.Seconds(), s.base, s.suf)
 	}
 }

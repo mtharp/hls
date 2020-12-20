@@ -1,6 +1,7 @@
 package hls
 
 import (
+	"fmt"
 	"time"
 
 	"eaglesong.dev/hls/internal/segment"
@@ -23,9 +24,10 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		}
 	}
 	initialDur := p.targetDuration()
-	name := p.names.Next()
-	for _, track := range p.tracks {
+	nextMSN := p.baseMSN + segment.MSN(len(p.primary.segments))
+	for trackID, track := range p.tracks {
 		track.frag.NewSegment()
+		name := fmt.Sprintf("%d%s%d.m4s", trackID, p.pid, nextMSN)
 		seg, err := segment.New(name, p.WorkDir, start, p.nextDCN, programTime)
 		if err != nil {
 			return err
@@ -72,13 +74,11 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	if n <= 0 {
 		return
 	}
+	p.baseMSN += segment.MSN(n)
 	for _, track := range p.tracks {
 		for _, seg := range track.segments[:n] {
-			if track == p.primary {
-				p.baseMSN++
-				if seg.Discontinuous() {
-					p.baseDCN++
-				}
+			if track == p.primary && seg.Discontinuous() {
+				p.baseDCN++
 			}
 			seg.Release()
 		}

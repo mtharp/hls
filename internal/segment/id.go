@@ -1,41 +1,17 @@
 package segment
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
 
-// MP4Generator generates integer filenames for MPEG DASH tracks
-var MP4Generator = NameGenerator{Suffix: ".m4s", ContentType: "video/iso.segment"}
-
-// NameGenerator creates and parses segment filenames
-type NameGenerator struct {
-	Suffix      string
-	ContentType string
-	next        int64
-}
-
-// Next returns the filename of the next segment
-func (n *NameGenerator) Next() Name {
-	v := strconv.FormatInt(n.next, 10)
-	n.next++
-	return Name{v, n.Suffix, n.ContentType}
-}
-
-// Parser parses segment filenames. It is safe for concurrent use.
-type Parser struct {
-	Suffix string
-}
-
-// Parser returns a snapshot that can be used to concurrently parse segment filenames.
-func (n *NameGenerator) Parser() Parser {
-	return Parser{Suffix: n.Suffix}
-}
-
-// Parse extracts the MSN and part number from a filename
-func (p Parser) Parse(name string) (id PartMSN, ok bool) {
-	name = strings.TrimSuffix(name, p.Suffix)
+// ParseName extracts the MSN and part number from a filename
+func ParseName(name string) (id PartMSN, ok bool) {
+	i := strings.LastIndexByte(name, '.')
+	if i < 0 {
+		return
+	}
+	name = name[:i]
 	id.Part = -1
 	if k := strings.IndexByte(name, '.'); k > 0 {
 		part, err := strconv.ParseInt(name[k+1:], 10, 0)
@@ -54,21 +30,6 @@ func (p Parser) Parse(name string) (id PartMSN, ok bool) {
 		return
 	}
 	return id, true
-}
-
-// Name constructs a segment or segment-part filename
-type Name struct {
-	base, suffix, contentType string
-}
-
-// Segment returns the filename of the segment
-func (n Name) String() string {
-	return fmt.Sprintf("%s%s", n.base, n.suffix)
-}
-
-// Part returns the filename of a segment part
-func (n Name) Part(part int) string {
-	return fmt.Sprintf("%s.%d%s", n.base, part, n.suffix)
 }
 
 // MSN is a Media Sequence Number, it starts at 0 for the first segment and

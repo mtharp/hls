@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultFragmentLength = 500 * time.Millisecond
+	defaultFragmentLength = 200 * time.Millisecond
 	slopOffset            = time.Millisecond
 )
 
@@ -54,13 +54,12 @@ type Publisher struct {
 	Prefetch bool
 
 	pid     string // unique filename for this instance of the stream
+	streams []av.CodecData
 	tracks  []*track
 	combo   *track
-	primary *track
-	comboID int // index into tracks of combo track
-	vidx    int // packet Idx of video stream
-	streams int // number of tracks in source
-	names   segment.NameGenerator
+	primary *track      // combo track or video track if no combo
+	comboID int         // index of combo track, for naming its segment files
+	vidx    int         // index of video in incoming stream
 	baseMSN segment.MSN // MSN of segments[0][0]
 
 	// hls
@@ -92,21 +91,8 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		return errors.New("too many streams")
 	}
 	p.pid = strconv.FormatInt(time.Now().Unix(), 36)
-	p.names = segment.MP4Generator
-	p.streams = len(streams)
-	switch p.Mode {
-	case ModeSingleTrack:
-		p.tracks = make([]*track, 1)
-		p.comboID = 0
-	case ModeSeparateTracks:
-		p.tracks = make([]*track, len(streams))
-		p.comboID = -1
-	case ModeSingleAndSeparate:
-		p.tracks = make([]*track, len(streams)+1)
-		p.comboID = len(streams)
-	default:
-		return errors.New("invalid setting for publisher mode")
-	}
+	p.streams = streams
+	p.comboID = -1
 	for i, cd := range streams {
 		if cd.Type().IsVideo() {
 			p.vidx = i
@@ -123,12 +109,13 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 			if err != nil {
 				return fmt.Errorf("stream %d: %w", i, err)
 			}
-			p.tracks[i] = &track{frag: frag, codecTag: tag}
+			t := &track{frag: frag, codecTag: tag}
+			p.tracks = append(p.tracks, t)
 			if i == p.vidx {
-				p.primary = p.tracks[i]
+				p.primary = t
 			}
 		}
-		p.initMPD(streams)
+		p.initMPD()
 	}
 	if p.Mode != ModeSeparateTracks {
 		// setup combined track
@@ -136,9 +123,11 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		if err != nil {
 			return fmt.Errorf("combined: %w", err)
 		}
-		p.tracks[p.comboID] = &track{frag: cfrag}
-		p.combo = p.tracks[p.comboID]
-		p.primary = p.tracks[p.comboID]
+		t := &track{frag: cfrag}
+		p.comboID = len(p.tracks)
+		p.tracks = append(p.tracks, t)
+		p.combo = t
+		p.primary = t
 	}
 	return nil
 }

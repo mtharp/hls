@@ -16,7 +16,6 @@ type hlsState struct {
 	tracks    []trackSnapshot
 	first     segment.MSN
 	complete  segment.PartMSN
-	parser    segment.Parser
 	bandwidth int
 }
 
@@ -73,7 +72,7 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 				completeParts = seg.Parts()
 			}
 			includeParts := fragLen > 0 && i >= len(track.segments)-3
-			seg.Format(&b, includeParts, trackID, p.pid)
+			seg.Format(&b, includeParts)
 		}
 		tracks[trackID] = trackSnapshot{
 			segments: cursors,
@@ -87,7 +86,6 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 	p.state.Store(hlsState{
 		tracks:    tracks,
 		bandwidth: int(bandwidth),
-		parser:    p.names.Parser(),
 		first:     p.baseMSN,
 		complete: segment.PartMSN{
 			MSN:  p.baseMSN + segment.MSN(completeIndex),
