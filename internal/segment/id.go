@@ -38,8 +38,8 @@ type MSN int
 
 // PartMSN identifies a segment by MSN and a part thereof
 type PartMSN struct {
-	MSN  MSN
-	Part int
+	MSN  MSN // index of the last complete segment
+	Part int // in-progress subpart of the next segment
 }
 
 // Satisfies returns true if the wanted MSN and part are complete

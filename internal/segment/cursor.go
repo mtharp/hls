@@ -29,14 +29,7 @@ func (c *Cursor) Valid() bool {
 
 func (s *Segment) setHeaders(rw http.ResponseWriter, cacheControl string) {
 	rw.Header().Set("Cache-Control", cacheControl)
-	ctype := "application/octet-stream"
-	switch s.suf {
-	case ".m4s":
-		ctype = "video/iso.segment"
-	case ".ts":
-		ctype = "video/MP2T"
-	}
-	rw.Header().Set("Content-Type", ctype)
+	rw.Header().Set("Content-Type", s.ctype)
 }
 
 // Serve the segment to a client.

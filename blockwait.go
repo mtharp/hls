@@ -20,19 +20,8 @@ func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hl
 	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
 	// subscribe to segment updates
-	ch := make(subscriber, 1)
-	p.subsMu.Lock()
-	if p.subs == nil {
-		p.subs = make(subMap)
-	}
-	p.subs[ch] = struct{}{}
-	p.subsMu.Unlock()
-	defer func() {
-		// unsubscribe
-		p.subsMu.Lock()
-		delete(p.subs, ch)
-		p.subsMu.Unlock()
-	}()
+	ch := p.addSub()
+	defer p.delSub(ch)
 	for {
 		state, ok := p.state.Load().(hlsState)
 		if !ok {
@@ -48,6 +37,23 @@ func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hl
 			return hlsState{}
 		}
 	}
+}
+
+func (p *Publisher) addSub() subscriber {
+	ch := make(subscriber, 1)
+	p.subsMu.Lock()
+	if p.subs == nil {
+		p.subs = make(subMap)
+	}
+	p.subs[ch] = struct{}{}
+	p.subsMu.Unlock()
+	return ch
+}
+
+func (p *Publisher) delSub(ch subscriber) {
+	p.subsMu.Lock()
+	delete(p.subs, ch)
+	p.subsMu.Unlock()
 }
 
 // notify subscribers that segment is ready

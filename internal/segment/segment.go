@@ -21,6 +21,7 @@ type Segment struct {
 	start       time.Duration
 	dcn         bool
 	programTime string
+	ctype       string
 	// modified while the segment is live
 	mu    sync.Mutex
 	cond  sync.Cond
@@ -33,7 +34,7 @@ type Segment struct {
 }
 
 // New creates a new HLS segment
-func New(name, workDir string, start time.Duration, dcn bool, programTime time.Time) (*Segment, error) {
+func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime time.Time) (*Segment, error) {
 	i := strings.LastIndexByte(name, '.')
 	if i < 0 {
 		return nil, errors.New("invalid segment basename")
@@ -41,6 +42,7 @@ func New(name, workDir string, start time.Duration, dcn bool, programTime time.T
 	s := &Segment{
 		base:  name[:i],
 		suf:   name[i:],
+		ctype: ctype,
 		start: start,
 		dcn:   dcn,
 	}

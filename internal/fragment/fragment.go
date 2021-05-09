@@ -13,11 +13,19 @@ type Fragment struct {
 	Duration    time.Duration
 }
 
+type Header struct {
+	HeaderName         string
+	HeaderContentType  string
+	HeaderContents     []byte
+	SegmentExtension   string
+	SegmentContentType string
+}
+
 type Fragmenter interface {
 	av.PacketWriter
 	Fragment() (Fragment, error)
 	Duration() time.Duration
 	TimeScale() uint32
-	MovieHeader() (filename, contentType string, contents []byte)
+	Header() Header
 	NewSegment()
 }

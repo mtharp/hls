@@ -3,6 +3,7 @@ package hls
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -48,7 +49,10 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 		initialDur = p.targetDuration()
 	}
 	fragLen := p.FragmentLength
-	if fragLen == 0 {
+	if p.Mode == ModeSingleAndSeparate {
+		// no parts in HLS playlist
+		fragLen = -1
+	} else if fragLen == 0 {
 		fragLen = defaultFragmentLength
 	}
 	completeIndex := -1
@@ -96,18 +100,20 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 }
 
 func (p *Publisher) formatTrackHeader(b *bytes.Buffer, trackID int, initialDur, fragLen time.Duration) {
-	fmt.Fprintf(b, "#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:%d\n", int(initialDur.Seconds()))
+	ver := 9
+	if fragLen <= 0 {
+		ver = 3
+	}
+	fmt.Fprintf(b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", ver, int(math.Round(initialDur.Seconds())))
 	fmt.Fprintf(b, "#EXT-X-MEDIA-SEQUENCE:%d\n", p.baseMSN)
 	if p.baseDCN != 0 {
 		fmt.Fprintf(b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.baseDCN)
 	}
-	if fragLen < 0 {
-		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n")
-	} else {
+	if fragLen > 0 {
 		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds(), 2.1*fragLen.Seconds())
 		fmt.Fprintf(b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	}
-	if filename, _, _ := p.tracks[trackID].frag.MovieHeader(); filename != "" {
+	if filename := p.tracks[trackID].hdr.HeaderName; filename != "" {
 		fmt.Fprintf(b, "#EXT-X-MAP:URI=\"%d%s%s\"\n", trackID, p.pid, filename)
 	}
 }

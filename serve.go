@@ -1,6 +1,7 @@
 package hls
 
 import (
+	"bytes"
 	"net/http"
 	"path"
 	"strings"
@@ -49,9 +50,9 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	case ".mp4":
 		// initialization segment
-		_, ctype, blob := p.tracks[trackID].frag.MovieHeader()
-		rw.Header().Set("Content-Type", ctype)
-		rw.Write(blob)
+		h := p.tracks[trackID].hdr
+		rw.Header().Set("Content-Type", h.HeaderContentType)
+		http.ServeContent(rw, req, "", time.Time{}, bytes.NewReader(h.HeaderContents))
 		return
 	case ".m4s", ".ts":
 		// media segment

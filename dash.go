@@ -35,15 +35,15 @@ func (p *Publisher) initMPD() {
 		p.mpd.TimeShiftBufferDepth.Duration = defaultBufferLength
 	}
 	for trackID, cd := range p.streams {
-		frag := p.tracks[trackID].frag
+		t := p.tracks[trackID]
 		aset := adaptationSet(cd, p.tracks[trackID].codecTag)
 		aset.SegmentTemplate = dashmpd.SegmentTemplate{
-			Timescale:       int(frag.TimeScale()),
+			Timescale:       int(t.frag.TimeScale()),
 			Media:           fmt.Sprintf("%d%s$Number$.m4s", trackID, p.pid),
 			StartNumber:     0,
 			SegmentTimeline: new(dashmpd.SegmentTimeline),
 		}
-		if filename, _, _ := frag.MovieHeader(); filename != "" {
+		if filename := t.hdr.HeaderName; filename != "" {
 			aset.SegmentTemplate.Initialization = fmt.Sprintf("%d%s%s", trackID, p.pid, filename)
 		}
 		p.mpd.Period[0].AdaptationSet = append(p.mpd.Period[0].AdaptationSet, aset)

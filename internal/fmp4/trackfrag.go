@@ -99,7 +99,17 @@ func (f *TrackFragmenter) NewSegment() {
 	f.shdrw = false
 }
 
-// MovieHeader marshals an init.mp4 for this track
-func (f *TrackFragmenter) MovieHeader() (filename, contentType string, blob []byte) {
-	return "init.mp4", "video/mp4", f.fhdr
+// Header marshals an init.mp4 for this track
+func (f *TrackFragmenter) Header() fragment.Header {
+	return fragment.Header{
+		HeaderName:         "init.mp4",
+		HeaderContentType:  "video/mp4",
+		HeaderContents:     f.fhdr,
+		SegmentExtension:   ".m4s",
+		SegmentContentType: "video/iso.segment",
+	}
+}
+
+func (TrackFragmenter) SegmentExtension() string {
+	return ".m4s"
 }

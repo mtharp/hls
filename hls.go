@@ -14,6 +14,7 @@ import (
 	"eaglesong.dev/hls/internal/fragment"
 	"eaglesong.dev/hls/internal/ratedetect"
 	"eaglesong.dev/hls/internal/segment"
+	"eaglesong.dev/hls/internal/tsfrag"
 	"github.com/nareix/joy4/av"
 )
 
@@ -33,7 +34,8 @@ const (
 	// devices.
 	ModeSeparateTracks
 	// ModeSingleAndSeparate uses a single track for HLS and separate tracks for
-	// DASH. This requires twice as much memory.
+	// DASH. This requires twice as much memory. The HLS track will use a
+	// simpler format compatible with certain mobile devices.
 	ModeSingleAndSeparate
 )
 
@@ -82,6 +84,7 @@ type Publisher struct {
 type track struct {
 	segments []*segment.Segment
 	frag     fragment.Fragmenter
+	hdr      fragment.Header
 	codecTag string
 }
 
@@ -109,7 +112,11 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 			if err != nil {
 				return fmt.Errorf("stream %d: %w", i, err)
 			}
-			t := &track{frag: frag, codecTag: tag}
+			t := &track{
+				frag:     frag,
+				hdr:      frag.Header(),
+				codecTag: tag,
+			}
 			p.tracks = append(p.tracks, t)
 			if i == p.vidx {
 				p.primary = t
@@ -119,11 +126,17 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 	}
 	if p.Mode != ModeSeparateTracks {
 		// setup combined track
-		cfrag, err := fmp4.NewMovie(streams)
+		var cfrag fragment.Fragmenter
+		var err error
+		if p.Mode == ModeSingleAndSeparate {
+			cfrag, err = tsfrag.New(streams)
+		} else {
+			cfrag, err = fmp4.NewMovie(streams)
+		}
 		if err != nil {
 			return fmt.Errorf("combined: %w", err)
 		}
-		t := &track{frag: cfrag}
+		t := &track{frag: cfrag, hdr: cfrag.Header()}
 		p.comboID = len(p.tracks)
 		p.tracks = append(p.tracks, t)
 		p.combo = t

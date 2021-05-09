@@ -27,8 +27,8 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	nextMSN := p.baseMSN + segment.MSN(len(p.primary.segments))
 	for trackID, track := range p.tracks {
 		track.frag.NewSegment()
-		name := fmt.Sprintf("%d%s%d.m4s", trackID, p.pid, nextMSN)
-		seg, err := segment.New(name, p.WorkDir, start, p.nextDCN, programTime)
+		name := fmt.Sprintf("%d%s%d%s", trackID, p.pid, nextMSN, track.hdr.SegmentExtension)
+		seg, err := segment.New(name, p.WorkDir, track.hdr.SegmentContentType, start, p.nextDCN, programTime)
 		if err != nil {
 			return err
 		}
@@ -36,8 +36,8 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		track.segments = append(track.segments, seg)
 	}
 	p.trimSegments(initialDur)
-	p.snapshot(initialDur)
 	p.updateMPD(initialDur)
+	p.snapshot(initialDur)
 	p.nextDCN = false
 	return nil
 }

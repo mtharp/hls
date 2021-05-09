@@ -84,9 +84,15 @@ func (f *MovieFragmenter) Duration() time.Duration {
 	return f.tracks[f.vidx].Duration()
 }
 
-// MovieHeader marshals an init.mp4 for the fragmenter's tracks
-func (f *MovieFragmenter) MovieHeader() (filename, contentType string, blob []byte) {
-	return "init.mp4", "video/mp4", f.fhdr
+// Header marshals an init.mp4 for this track
+func (f *MovieFragmenter) Header() fragment.Header {
+	return fragment.Header{
+		HeaderName:         "init.mp4",
+		HeaderContentType:  "video/mp4",
+		HeaderContents:     f.fhdr,
+		SegmentExtension:   ".m4s",
+		SegmentContentType: "video/iso.segment",
+	}
 }
 
 // NewSegment indicates that a new segment has begun and  the next call to
