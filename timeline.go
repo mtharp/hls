@@ -36,7 +36,6 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		track.segments = append(track.segments, seg)
 	}
 	p.trimSegments(initialDur)
-	p.updateMPD(initialDur)
 	p.snapshot(initialDur)
 	p.nextDCN = false
 	return nil

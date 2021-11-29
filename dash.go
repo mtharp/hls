@@ -51,9 +51,9 @@ func (p *Publisher) initMPD() {
 }
 
 // update MPD with current set of available segments
-func (p *Publisher) updateMPD(initialDur time.Duration) {
+func (p *Publisher) updateMPD(initialDur time.Duration) cachedMPD {
 	if p.Mode == ModeSingleTrack {
-		return
+		return cachedMPD{}
 	}
 	fragLen := p.FragmentLength
 	if fragLen <= 0 {
@@ -68,10 +68,10 @@ func (p *Publisher) updateMPD(initialDur time.Duration) {
 	blob = append([]byte(xml.Header), blob...)
 	d := sha256.New()
 	d.Write(blob)
-	p.mpdsnap.Store(cachedMPD{
+	return cachedMPD{
 		etag:  "\"" + hex.EncodeToString(d.Sum(nil)[:16]) + "\"",
 		value: blob,
-	})
+	}
 }
 
 // update MPD with a single track's segments

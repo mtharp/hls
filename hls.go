@@ -70,9 +70,9 @@ type Publisher struct {
 	state   atomic.Value
 
 	// dash
-	rate    ratedetect.Detector
-	mpd     dashmpd.MPD
-	mpdsnap atomic.Value
+	rate ratedetect.Detector
+	mpd  dashmpd.MPD
+	prev hlsState
 
 	subsMu sync.Mutex
 	subs   subMap

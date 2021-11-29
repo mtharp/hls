@@ -3,8 +3,10 @@ package hls
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"eaglesong.dev/hls/internal/segment"
@@ -93,4 +95,29 @@ func parseBlock(q url.Values) (want segment.PartMSN, err error) {
 	// block for part
 	want.Part = int(vv)
 	return
+}
+
+func (p *Publisher) waitForEtag(req *http.Request, state hlsState) hlsState {
+	previous := strings.TrimPrefix(req.Header.Get("If-None-Match"), "W/")
+	if previous == "" || state.mpd.etag == "" || state.mpd.etag != previous {
+		return state
+	}
+	ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
+	defer cancel()
+	ch := p.addSub()
+	defer p.delSub(ch)
+	for {
+		state, ok := p.state.Load().(hlsState)
+		if !ok {
+			return state
+		}
+		if state.mpd.etag != previous {
+			return state
+		}
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return state
+		}
+	}
 }

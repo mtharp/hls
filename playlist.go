@@ -18,6 +18,8 @@ type hlsState struct {
 	first     segment.MSN
 	complete  segment.PartMSN
 	bandwidth int
+
+	mpd cachedMPD
 }
 
 type trackSnapshot struct {
@@ -87,15 +89,22 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 	if totalDur > 0 {
 		bandwidth = float64(totalSize) / totalDur
 	}
-	p.state.Store(hlsState{
+	completeMSN := p.baseMSN + segment.MSN(completeIndex)
+	mpd := p.prev.mpd
+	if completeMSN != p.prev.complete.MSN && completeMSN != 0 {
+		mpd = p.updateMPD(initialDur)
+	}
+	p.prev = hlsState{
 		tracks:    tracks,
 		bandwidth: int(bandwidth),
 		first:     p.baseMSN,
 		complete: segment.PartMSN{
-			MSN:  p.baseMSN + segment.MSN(completeIndex),
+			MSN:  completeMSN,
 			Part: completeParts,
 		},
-	})
+		mpd: mpd,
+	}
+	p.state.Store(p.prev)
 	p.notifySegment()
 }
 

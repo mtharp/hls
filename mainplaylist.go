@@ -34,14 +34,14 @@ func (p *Publisher) serveMainPlaylist(rw http.ResponseWriter, req *http.Request,
 }
 
 func (p *Publisher) serveDASH(rw http.ResponseWriter, req *http.Request, state hlsState) {
-	mpd, _ := p.mpdsnap.Load().(cachedMPD)
-	if len(mpd.value) == 0 {
+	state = p.waitForEtag(req, state)
+	if len(state.mpd.value) == 0 {
 		http.NotFound(rw, req)
 		return
 	}
-	r := bytes.NewReader(mpd.value)
+	r := bytes.NewReader(state.mpd.value)
 	rw.Header().Set("Content-Type", "application/dash+xml")
 	rw.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
-	rw.Header().Set("Etag", mpd.etag)
+	rw.Header().Set("Etag", state.mpd.etag)
 	http.ServeContent(rw, req, "", time.Time{}, r)
 }
