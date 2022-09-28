@@ -88,16 +88,9 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 	flusher, _ := rw.(http.Flusher)
 	var copied int64
 	var part int
-	var needFlush bool
 	for {
-		if part == len(s.parts) && needFlush && flusher != nil {
-			// if there's nothing better to do, then flush the current buffer out and try again
-			s.mu.Unlock()
-			flusher.Flush()
-			needFlush = false
-			s.mu.Lock()
-		}
 		// write available parts
+		var needFlush bool
 		for ; part < len(s.parts) && !s.final; part++ {
 			d := s.parts[part].Bytes
 			s.mu.Unlock()
@@ -112,8 +105,16 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 			// byte buffers are cleared when the segment is finalized. break out
 			// and copy the rest from file.
 			break
+		} else if needFlush && flusher != nil {
+			// flush the current buffer out, then check if more parts arrived
+			// while the lock was released.
+			s.mu.Unlock()
+			flusher.Flush()
+			s.mu.Lock()
+		} else {
+			// wait for more parts
+			s.cond.Wait()
 		}
-		s.cond.Wait()
 	}
 	remainder := s.size - copied
 	if remainder <= 0 || s.f == nil {
