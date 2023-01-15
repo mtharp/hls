@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"eaglesong.dev/hls/internal/dashmpd"
-	"eaglesong.dev/hls/internal/timescale"
+	"github.com/cleoag/hls/internal/dashmpd"
+	"github.com/cleoag/hls/internal/timescale"
 	"github.com/nareix/joy4/av"
 )
 

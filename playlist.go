@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"eaglesong.dev/hls/internal/segment"
+	"github.com/cleoag/hls/internal/segment"
 )
 
 const maxFutureMSN = 3

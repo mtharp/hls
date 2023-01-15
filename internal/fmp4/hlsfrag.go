@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"eaglesong.dev/hls/internal/fmp4/fmp4io"
-	"eaglesong.dev/hls/internal/fragment"
+	"github.com/cleoag/hls/internal/fmp4/fmp4io"
+	"github.com/cleoag/hls/internal/fragment"
 	"github.com/nareix/joy4/av"
 )
 

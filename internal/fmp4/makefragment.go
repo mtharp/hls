@@ -1,9 +1,9 @@
 package fmp4
 
 import (
-	"eaglesong.dev/hls/internal/fmp4/fmp4io"
-	"eaglesong.dev/hls/internal/fragment"
-	"eaglesong.dev/hls/internal/timescale"
+	"github.com/cleoag/hls/internal/fmp4/fmp4io"
+	"github.com/cleoag/hls/internal/fragment"
+	"github.com/cleoag/hls/internal/timescale"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/utils/bits/pio"
 )

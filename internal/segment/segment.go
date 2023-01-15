@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"eaglesong.dev/hls/internal/fragment"
+	"github.com/cleoag/hls/internal/fragment"
 )
 
 // Segment holds a single HLS segment which can be written to in parts

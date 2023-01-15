@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"eaglesong.dev/hls/internal/segment"
+	"github.com/cleoag/hls/internal/segment"
 )
 
 const (

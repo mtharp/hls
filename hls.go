@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"eaglesong.dev/hls/internal/codectag"
-	"eaglesong.dev/hls/internal/dashmpd"
-	"eaglesong.dev/hls/internal/fmp4"
-	"eaglesong.dev/hls/internal/fragment"
-	"eaglesong.dev/hls/internal/ratedetect"
-	"eaglesong.dev/hls/internal/segment"
-	"eaglesong.dev/hls/internal/tsfrag"
+	"github.com/cleoag/hls/internal/codectag"
+	"github.com/cleoag/hls/internal/dashmpd"
+	"github.com/cleoag/hls/internal/fmp4"
+	"github.com/cleoag/hls/internal/fragment"
+	"github.com/cleoag/hls/internal/ratedetect"
+	"github.com/cleoag/hls/internal/segment"
+	"github.com/cleoag/hls/internal/tsfrag"
 	"github.com/nareix/joy4/av"
 )
 

@@ -4,7 +4,7 @@ import (
 	"encoding/xml"
 	"time"
 
-	"eaglesong.dev/hls/internal/ratedetect"
+	"github.com/cleoag/hls/internal/ratedetect"
 )
 
 type MPD struct {

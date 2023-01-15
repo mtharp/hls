@@ -1,7 +1,7 @@
 package fmp4io
 
 import (
-	"eaglesong.dev/hls/internal/fmp4/esio"
+	"github.com/cleoag/hls/internal/fmp4/esio"
 	"github.com/nareix/joy4/utils/bits/pio"
 )
 

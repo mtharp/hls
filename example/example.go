@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"eaglesong.dev/hls"
+	"github.com/cleoag/hls"
 	"github.com/nareix/joy4/av/avutil"
 	"github.com/nareix/joy4/format/rtmp"
 	"golang.org/x/sync/errgroup"

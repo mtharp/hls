@@ -3,8 +3,8 @@ package fmp4
 import (
 	"fmt"
 
-	"eaglesong.dev/hls/internal/fmp4/esio"
-	"eaglesong.dev/hls/internal/fmp4/fmp4io"
+	"github.com/cleoag/hls/internal/fmp4/esio"
+	"github.com/cleoag/hls/internal/fmp4/fmp4io"
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/aacparser"
 	"github.com/nareix/joy4/codec/h264parser"
