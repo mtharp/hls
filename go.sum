@@ -2,3 +2,5 @@ github.com/cleoag/joy4 v0.0.0-20190831160920-566887487cc0 h1:4xMThpHv6x1Wibefdnv
 github.com/cleoag/joy4 v0.0.0-20190831160920-566887487cc0/go.mod h1:iI10z+g4w6+7U/5so+QLXz7llyRA0e4kdxfhh7jxKe0=
 golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9 h1:SQFwaSi55rU7vdNs9Yr0Z324VNlrF+0wMqRXT4St8ck=
 golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sync v0.1.0 h1:wsuoTGHzEhffawBOhz5CYhcrV4IdKZbEyZjBMuTp12o=
+golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
