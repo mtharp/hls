@@ -8,7 +8,6 @@ import (
 	"github.com/nareix/joy4/av"
 	"github.com/nareix/joy4/codec/aacparser"
 	"github.com/nareix/joy4/codec/h264parser"
-	"github.com/nareix/joy4/codec/opusparser"
 )
 
 // Track creates a TRAK atom for this stream
@@ -54,18 +53,6 @@ func (f *TrackFragmenter) Track() (*fmp4io.Track, error) {
 					DecoderConfig: dc,
 					SLConfig:      &esio.SLConfigDescriptor{Predefined: esio.SLConfigMP4},
 				},
-			},
-		}
-	case *opusparser.CodecData:
-		f.timeScale = 48000
-		sample.SampleDesc.OpusDesc = &fmp4io.OpusSampleEntry{
-			DataRefIdx:       1,
-			NumberOfChannels: uint16(cd.ChannelLayout().Count()),
-			SampleSize:       16,
-			SampleRate:       float64(cd.SampleRate()),
-			Conf: &fmp4io.OpusSpecificConfiguration{
-				OutputChannelCount: uint8(cd.ChannelLayout().Count()),
-				PreSkip:            3840, // 80ms
 			},
 		}
 	default:
