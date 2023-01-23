@@ -3,6 +3,7 @@ package hls
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -94,6 +95,8 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 		return errors.New("too many streams")
 	}
 	p.pid = strconv.FormatInt(time.Now().Unix(), 36)
+	p.WorkDir, _ = os.MkdirTemp("", p.pid)
+	println("created temp folder in path:", p.WorkDir, " for stream id:", p.pid)
 	p.streams = streams
 	p.comboID = -1
 	for i, cd := range streams {
@@ -230,4 +233,5 @@ func (p *Publisher) Close() {
 		}
 		track.segments = nil
 	}
+	os.RemoveAll(p.WorkDir)
 }

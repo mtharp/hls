@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -51,10 +50,11 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
 	var err error
-	s.f, err = ioutil.TempFile(workDir, name)
+	s.f, err = os.CreateTemp(workDir, name)
 	if err != nil {
 		return nil, err
 	}
+	println("created segment in path:", s.f.Name(), " for stream id:", workDir)
 	os.Remove(s.f.Name())
 	return s, nil
 }

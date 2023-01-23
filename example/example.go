@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	pub := &hls.Publisher{}
+	pub := &hls.Publisher{WorkDir: "tmp"}
 	rts := &rtmp.Server{
 		HandlePublish: func(c *rtmp.Conn) {
 			defer c.Close()
@@ -25,6 +25,10 @@ func main() {
 	}
 	var eg errgroup.Group
 	eg.Go(rts.ListenAndServe)
+
+	http.Handle("/exit/", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		pub.Close()
+	}))
 
 	http.Handle("/hls/", pub)
 	http.Handle("/", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
