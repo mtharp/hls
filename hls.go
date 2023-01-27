@@ -169,6 +169,9 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 
 // WriteExtendedPacket publishes a packet with additional metadata
 func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
+	if p.Closed == true {
+		return nil
+	}
 	// enqueue packet to fragmenter
 	if p.Mode != ModeSingleTrack {
 		if t := p.tracks[pkt.Idx]; len(t.segments) != 0 {
