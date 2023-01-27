@@ -81,7 +81,7 @@ type Publisher struct {
 	// Precreate is deprecated and no longer used
 	Precreate int
 
-	closed bool
+	Closed bool
 }
 
 type track struct {
@@ -228,7 +228,7 @@ func (p *Publisher) MPD() string {
 
 // Close frees resources associated with the publisher
 func (p *Publisher) Close() {
-	p.closed = true
+	p.Closed = true
 	p.state.Store(hlsState{})
 	for _, track := range p.tracks {
 		for _, seg := range track.segments {
