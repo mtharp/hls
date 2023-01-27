@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	pub := &hls.Publisher{WorkDir: "tmp"}
+	pub := &hls.Publisher{}
 	rts := &rtmp.Server{
 		HandlePublish: func(c *rtmp.Conn) {
 			defer c.Close()
@@ -59,6 +59,7 @@ hls.loadSource('/hls/index.m3u8');
 hls.attachMedia(document.getElementById('video'));
 // hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
 </script>
+<a href='/exit/'> close stream</a>
 </body>
 </html>
 `

@@ -55,7 +55,7 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 		return nil, err
 	}
 	//println("created segment in path:", s.f.Name(), " for stream id:", workDir)
-	os.Remove(s.f.Name())
+	//os.Remove(s.f.Name())
 	return s, nil
 }
 
