@@ -54,7 +54,7 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 	if err != nil {
 		return nil, err
 	}
-	println("created segment in path:", s.f.Name(), " for stream id:", workDir)
+	//println("created segment in path:", s.f.Name(), " for stream id:", workDir)
 	os.Remove(s.f.Name())
 	return s, nil
 }
@@ -111,6 +111,7 @@ func (s *Segment) Release() {
 	s.mu.Lock()
 	s.size = 0
 	s.f.Close()
+	os.Remove(s.f.Name())
 	s.f = nil
 	s.mu.Unlock()
 }

@@ -96,7 +96,7 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 	}
 	p.pid = strconv.FormatInt(time.Now().Unix(), 36)
 	p.WorkDir, _ = os.MkdirTemp("", p.pid)
-	println("created temp folder in path:", p.WorkDir, " for stream id:", p.pid)
+	//println("created temp folder in path:", p.WorkDir, " for stream id:", p.pid)
 	p.streams = streams
 	p.comboID = -1
 	for i, cd := range streams {
