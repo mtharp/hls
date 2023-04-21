@@ -12,6 +12,10 @@ import (
 
 // serve the HLS playlist and segments
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+
+	rw.Header().Set("Access-Control-Allow-Origin", "*")
+	rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
 	state, ok := p.state.Load().(hlsState)
 	if !ok {
 		http.NotFound(rw, req)

@@ -119,7 +119,8 @@ func (p *Publisher) formatTrackHeader(b *bytes.Buffer, trackID int, initialDur, 
 		fmt.Fprintf(b, "#EXT-X-DISCONTINUITY-SEQUENCE:%d\n", p.baseDCN)
 	}
 	if fragLen > 0 {
-		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds(), 2.1*fragLen.Seconds())
+		//fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds(), 2.1*fragLen.Seconds())
+		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 3*initialDur.Seconds(), 3.5*fragLen.Seconds())
 		fmt.Fprintf(b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	}
 	if filename := p.tracks[trackID].hdr.HeaderName; filename != "" {

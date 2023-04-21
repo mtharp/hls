@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"strings"
@@ -13,8 +14,16 @@ import (
 )
 
 func main() {
-	pub := &hls.Publisher{}
-	rts := &rtmp.Server{
+
+	modePtr := flag.Int("mode", 0, "HLS Mode (0,1,2)")
+	fragLenPtr := flag.Int("fraglen", 200, "HLS Fragment Length (ms)")
+	bufferLenPtr := flag.Int("bufferlen", 10, "HLS Buffer Length (sec)")
+	initialDurationPtr := flag.Int("initialduration", 2, "HLS Initial duration (sec)")
+
+	flag.Parse()
+
+	pub := &hls.Publisher{Mode: hls.Mode(*modePtr), FragmentLength: time.Duration(*fragLenPtr) * time.Millisecond, BufferLength: time.Duration(*bufferLenPtr) * time.Second, InitialDuration: time.Duration(*initialDurationPtr) * time.Second}
+	rts := &rtmp.Server{Addr: ":1935",
 		HandlePublish: func(c *rtmp.Conn) {
 			defer c.Close()
 			log.Println("publish started from", c.NetConn().RemoteAddr())
@@ -36,6 +45,7 @@ func main() {
 		http.ServeContent(rw, req, "index.html", time.Time{}, r)
 	}))
 	eg.Go(func() error {
+		//return http.ListenAndServeTLS(":8080", "server.crt", "server.key", nil)
 		return http.ListenAndServe(":8080", nil)
 	})
 	log.Println("listening on rtmp://localhost/live and http://localhost:8080")
@@ -54,9 +64,20 @@ const home = `<!DOCTYPE html>
 <body>
 <video id="video" muted autoplay controls></video>
 <script>
-let hls = new Hls();
-hls.loadSource('/hls/index.m3u8');
-hls.attachMedia(document.getElementById('video'));
+let config = {
+ lowLatencyMode: true,
+};
+let videoSrc = '/hls/index.m3u8';
+let video = document.getElementById('video');
+ if (Hls.isSupported()) {
+    var hls = new Hls(config);
+    hls.loadSource(videoSrc);
+    hls.attachMedia(video);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = videoSrc;
+ }
+
+
 // hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
 </script>
 <a href='/exit/'> close stream</a>
