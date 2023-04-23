@@ -117,34 +117,6 @@ func (s *Segment) Release() {
 }
 
 // Format a playlist fragment for this segment
-func (s *Segment) FormatOld(b *bytes.Buffer, includeParts bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.final && (!includeParts || len(s.parts) == 0) {
-		return
-	}
-	if s.programTime != "" {
-		fmt.Fprintf(b, "#EXT-X-PROGRAM-DATE-TIME:%s\n", s.programTime)
-	}
-	if s.dcn {
-		b.WriteString("#EXT-X-DISCONTINUITY\n")
-	}
-	if includeParts {
-		for i, part := range s.parts {
-			var independent string
-			if part.Independent {
-				independent = "INDEPENDENT=YES,"
-			}
-			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s.%d%s\"\n",
-				part.Duration.Seconds(), independent, s.base, i, s.suf)
-		}
-	}
-	if s.final {
-		fmt.Fprintf(b, "#EXTINF:%f,\n%s%s\n", s.dur.Seconds(), s.base, s.suf)
-	}
-}
-
-// Format a playlist fragment for this segment
 func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,18 +138,10 @@ func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
 			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s.%d%s\"\n",
 				part.Duration.Seconds(), independent, s.base, i, s.suf)
 		}
+		fmt.Sprintf("#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"%s.%d%s\"\n", s.base, len(s.parts), s.suf)
 	}
 	if s.final {
 		fmt.Fprintf(b, "#EXTINF:%f,\n%s%s\n", s.dur.Seconds(), s.base, s.suf)
 	}
-	// Add the preload hint if the segment is not final
-	b.WriteString(s.PreloadHint())
-}
 
-// PreloadHint formats the EXT-X-PRELOAD-HINT tag for this segment
-func (s *Segment) PreloadHint() string {
-	if !s.final && s.nextSegmentName != "" {
-		return fmt.Sprintf("#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"%s\"\n", s.nextSegmentName)
-	}
-	return ""
 }

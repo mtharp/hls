@@ -29,19 +29,25 @@ type trackSnapshot struct {
 
 // Get a segment by MSN. Returns the zero value if it isn't available.
 func (s hlsState) Get(msn segment.MSN, trackID int) (c segment.Cursor, ok bool) {
+	// Check if the requested segment MSN is too far in the future.
 	if msn > s.complete.MSN+maxFutureMSN {
-		// too far in the future
+		// If it is too far in the future, return a zero-value cursor and false.
 		return segment.Cursor{}, false
 	}
+
+	// Calculate the index of the requested segment in the track's segment list.
 	idx := int(msn - s.first)
+
+	// Check if the requested segment has already expired.
 	if idx < 0 {
-		// expired
+		// If it has expired, return a zero-value cursor and false.
 		return segment.Cursor{}, false
 	} else if idx >= len(s.tracks[trackID].segments) {
-		// ready soon
+		// If the requested segment is not yet available but expected soon, return a zero-value cursor and true.
 		return segment.Cursor{}, true
 	}
-	// ready now
+
+	// If the requested segment is available, return its cursor and true.
 	return s.tracks[trackID].segments[idx], true
 }
 
