@@ -25,9 +25,10 @@ type Segment struct {
 	mu    sync.Mutex
 	cond  sync.Cond
 	parts []fragment.Fragment
+
 	// set when the segment is finalized
-	f     *os.File
 	final bool
+	f     *os.File
 	size  int64
 	dur   time.Duration
 }
@@ -117,7 +118,7 @@ func (s *Segment) Release() {
 }
 
 // Format a playlist fragment for this segment
-func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
+func (s *Segment) Format(b *bytes.Buffer, includeParts bool, includePreloadHint bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.final && (!includeParts || len(s.parts) == 0) {
@@ -138,7 +139,9 @@ func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
 			fmt.Fprintf(b, "#EXT-X-PART:DURATION=%f,%sURI=\"%s.%d%s\"\n",
 				part.Duration.Seconds(), independent, s.base, i, s.suf)
 		}
-		fmt.Sprintf("#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"%s.%d%s\"\n", s.base, len(s.parts), s.suf)
+	}
+	if includePreloadHint {
+		fmt.Fprintf(b, "#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"%s.%d%s\"\n", s.base, len(s.parts), s.suf)
 	}
 	if s.final {
 		fmt.Fprintf(b, "#EXTINF:%f,\n%s%s\n", s.dur.Seconds(), s.base, s.suf)

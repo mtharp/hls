@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	defaultInitialDuration = 5 * time.Second
-	defaultBufferLength    = 60 * time.Second
+	defaultInitialDuration = 2 * time.Second
+	defaultBufferLength    = 10 * time.Second
+	defaultKeepSegments    = 5
 )
 
 // start a new segment
@@ -66,8 +67,8 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 		goalLen = defaultBufferLength
 	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
-	if keepSegments < 10 {
-		keepSegments = 10
+	if keepSegments < defaultKeepSegments {
+		keepSegments = defaultKeepSegments
 	}
 	n := len(p.primary.segments) - keepSegments
 	if n <= 0 {

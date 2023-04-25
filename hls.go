@@ -197,6 +197,8 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		// the fragmenter retains the last packet in order to calculate the
 		// duration of the previous frame. so switching segments here will put
 		// this keyframe into the new segment.
+		pkt.ProgramTime = time.Now()
+		//log.Println("keyframe" + " " + pkt.Time.String() + " " + pkt.ProgramTime.String())
 		return p.newSegment(pkt.Time, pkt.ProgramTime)
 	} else if len(p.primary.segments) != 0 && p.primary.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically

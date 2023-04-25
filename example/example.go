@@ -16,9 +16,9 @@ import (
 func main() {
 
 	modePtr := flag.Int("mode", 0, "HLS Mode (0,1,2)")
-	fragLenPtr := flag.Int("fraglen", 200, "HLS Fragment Length (ms)")
-	bufferLenPtr := flag.Int("bufferlen", 10, "HLS Buffer Length (sec)")
-	initialDurationPtr := flag.Int("initialduration", 2, "HLS Initial duration (sec)")
+	fragLenPtr := flag.Int("fraglen", 100, "HLS Fragment Length (ms)")
+	bufferLenPtr := flag.Int("bufferlen", 1, "HLS Buffer Length (sec)")
+	initialDurationPtr := flag.Int("initialduration", 1, "HLS Initial duration (sec)")
 
 	flag.Parse()
 
@@ -40,19 +40,38 @@ func main() {
 	}))
 
 	http.Handle("/hls/", pub)
-	http.Handle("/", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+	http.Handle("/player.html", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		r := strings.NewReader(home)
-		http.ServeContent(rw, req, "index.html", time.Time{}, r)
+		http.ServeContent(rw, req, "player.html", time.Time{}, r)
 	}))
+
+	http.Handle("/links.html", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		r := strings.NewReader(links)
+		http.ServeContent(rw, req, "links.html", time.Time{}, r)
+	}))
+
 	eg.Go(func() error {
 		//return http.ListenAndServeTLS(":8080", "server.crt", "server.key", nil)
 		return http.ListenAndServe(":8080", nil)
 	})
-	log.Println("listening on rtmp://localhost/live and http://localhost:8080")
+	log.Println("listening on rtmp://localhost:1935/live and http://localhost:8080/player.html")
 	if err := eg.Wait(); err != nil {
 		log.Println("error:", err)
 	}
 }
+
+const links = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>HLS demo</title>
+</head>
+<body>
+<a href='/hls/index.m3u8'> m3u8</a>
+<a href='https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8'> bunny low latency </a>
+</body>
+</html>
+`
 
 const home = `<!DOCTYPE html>
 <html>
@@ -62,7 +81,7 @@ const home = `<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
-<video id="video" muted autoplay controls></video>
+<video id="video" muted autoplay controls width="1280" height="720"></video>
 <script>
 let config = {
  lowLatencyMode: true,
@@ -81,6 +100,9 @@ let video = document.getElementById('video');
 // hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
 </script>
 <a href='/exit/'> close stream</a>
+</br>
+<a href='/hls/index.m3u8'> m3u8</a>
+<a href='https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8'> bunny low latency </a>
 </body>
 </html>
 `

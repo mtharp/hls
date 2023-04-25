@@ -82,9 +82,11 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 				totalDur += seg.Duration().Seconds()
 			} else if i == completeIndex+1 && track == p.primary {
 				completeParts = seg.Parts()
+				//log.Println("segment", i, "completeParts", completeParts)
 			}
 			includeParts := fragLen > 0 && i >= len(track.segments)-3
-			seg.Format(&b, includeParts)
+			includePreloadHint := i == len(track.segments)-1
+			seg.Format(&b, includeParts, includePreloadHint)
 		}
 		tracks[trackID] = trackSnapshot{
 			segments: cursors,
@@ -115,7 +117,7 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 }
 
 func (p *Publisher) formatTrackHeader(b *bytes.Buffer, trackID int, initialDur, fragLen time.Duration) {
-	ver := 9
+	ver := 7
 	if fragLen <= 0 {
 		ver = 3
 	}
@@ -126,7 +128,7 @@ func (p *Publisher) formatTrackHeader(b *bytes.Buffer, trackID int, initialDur, 
 	}
 	if fragLen > 0 {
 		//fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds(), 2.1*fragLen.Seconds())
-		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 3*initialDur.Seconds(), 3.5*fragLen.Seconds())
+		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=%f,\n", 3*fragLen.Seconds())
 		fmt.Fprintf(b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	}
 	if filename := p.tracks[trackID].hdr.HeaderName; filename != "" {
