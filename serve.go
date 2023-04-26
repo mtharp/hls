@@ -16,8 +16,8 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// print full request info with time
 	//log.Println("ServeHTTP: " + req.Method + " " + req.URL.Path + " " + req.Proto + " " + req.RemoteAddr + " " + req.UserAgent())
 
-	rw.Header().Set("Access-Control-Allow-Origin", "*")
-	rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	//rw.Header().Set("Access-Control-Allow-Origin", "*")
+	//rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	state, ok := p.state.Load().(hlsState)
 	if !ok {
