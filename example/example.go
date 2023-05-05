@@ -16,9 +16,9 @@ import (
 func main() {
 
 	modePtr := flag.Int("mode", 0, "HLS Mode (0,1,2)")
-	fragLenPtr := flag.Int("fraglen", 100, "HLS Fragment Length (ms)")
-	bufferLenPtr := flag.Int("bufferlen", 1, "HLS Buffer Length (sec)")
-	initialDurationPtr := flag.Int("initialduration", 1, "HLS Initial duration (sec)")
+	fragLenPtr := flag.Int("fraglen", 500, "HLS Fragment Length (ms)")
+	bufferLenPtr := flag.Int("bufferlen", 2, "HLS Buffer Length (sec)")
+	initialDurationPtr := flag.Int("initialduration", 2, "HLS Initial duration (sec)")
 
 	flag.Parse()
 

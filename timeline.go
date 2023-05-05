@@ -66,9 +66,13 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 	if goalLen == 0 {
 		goalLen = defaultBufferLength
 	}
+	keepSegmentsLen := p.KeepSegments
+	if keepSegmentsLen == 0 {
+		keepSegmentsLen = defaultKeepSegments
+	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
-	if keepSegments < defaultKeepSegments {
-		keepSegments = defaultKeepSegments
+	if keepSegments < keepSegmentsLen {
+		keepSegments = keepSegmentsLen
 	}
 	n := len(p.primary.segments) - keepSegments
 	if n <= 0 {

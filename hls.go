@@ -56,6 +56,8 @@ type Publisher struct {
 	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
 	Prefetch bool
 
+	KeepSegments int // number of segments to keep in the playlist. Defaults to 3.
+
 	pid     string // unique filename for this instance of the stream
 	streams []av.CodecData
 	tracks  []*track
