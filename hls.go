@@ -3,6 +3,7 @@ package hls
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -56,7 +57,7 @@ type Publisher struct {
 	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
 	Prefetch bool
 
-	KeepSegments int // number of segments to keep in the playlist. Defaults to 3.
+	KeepSegments int // pointer to allow 0, number of segments to keep in the playlist. Defaults to 3.
 
 	pid     string // unique filename for this instance of the stream
 	streams []av.CodecData
@@ -205,6 +206,7 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	} else if len(p.primary.segments) != 0 && p.primary.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically
 		if err := p.flush(); err != nil {
+			log.Println("flush error:", err)
 			return err
 		}
 		p.snapshot(0)

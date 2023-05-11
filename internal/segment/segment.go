@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -48,14 +49,13 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 	}
 	s.cond.L = &s.mu
 	if !programTime.IsZero() {
-		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		s.programTime = programTime.UTC().Format(time.RFC3339Nano)
 	}
 	var err error
 	s.f, err = os.CreateTemp(workDir, name)
 	if err != nil {
 		return nil, err
 	}
-	//println("created segment in path:", s.f.Name(), " for stream id:", workDir)
 	//os.Remove(s.f.Name())
 	return s, nil
 }
@@ -63,6 +63,7 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 // Append a complete fragment to the segment. The buffer must not be modified afterwards.
 func (s *Segment) Append(frag fragment.Fragment) error {
 	s.mu.Lock()
+	log.Println("---> append fragment", len(s.parts), "to segment", s.base)
 	s.parts = append(s.parts, frag)
 	s.size += int64(frag.Length)
 	s.mu.Unlock()
@@ -100,6 +101,7 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 	}
 	// discard individual part buffers. the size is retained so they can still
 	// be served from the finalized file.
+	log.Println("---> finalizing segment", s.base)
 	for i := range s.parts {
 		s.parts[i].Bytes = nil
 	}

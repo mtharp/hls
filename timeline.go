@@ -2,6 +2,7 @@ package hls
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/cleoag/hls/internal/segment"
@@ -10,7 +11,6 @@ import (
 const (
 	defaultInitialDuration = 2 * time.Second
 	defaultBufferLength    = 10 * time.Second
-	defaultKeepSegments    = 5
 )
 
 // start a new segment
@@ -33,6 +33,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 		if err != nil {
 			return err
 		}
+		log.Println("---> new segment", name)
 		// add the new segment and remove the old
 		track.segments = append(track.segments, seg)
 	}
@@ -67,9 +68,6 @@ func (p *Publisher) trimSegments(segmentLen time.Duration) {
 		goalLen = defaultBufferLength
 	}
 	keepSegmentsLen := p.KeepSegments
-	if keepSegmentsLen == 0 {
-		keepSegmentsLen = defaultKeepSegments
-	}
 	keepSegments := int((goalLen+segmentLen-1)/segmentLen + 1)
 	if keepSegments < keepSegmentsLen {
 		keepSegments = keepSegmentsLen

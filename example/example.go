@@ -19,10 +19,11 @@ func main() {
 	fragLenPtr := flag.Int("fraglen", 500, "HLS Fragment Length (ms)")
 	bufferLenPtr := flag.Int("bufferlen", 2, "HLS Buffer Length (sec)")
 	initialDurationPtr := flag.Int("initialduration", 2, "HLS Initial duration (sec)")
+	keepSegmentsPtr := flag.Int("keepsegments", 3, "HLS how many segments to keep")
 
 	flag.Parse()
 
-	pub := &hls.Publisher{Mode: hls.Mode(*modePtr), FragmentLength: time.Duration(*fragLenPtr) * time.Millisecond, BufferLength: time.Duration(*bufferLenPtr) * time.Second, InitialDuration: time.Duration(*initialDurationPtr) * time.Second}
+	pub := &hls.Publisher{Mode: hls.Mode(*modePtr), FragmentLength: time.Duration(*fragLenPtr) * time.Millisecond, BufferLength: time.Duration(*bufferLenPtr) * time.Second, InitialDuration: time.Duration(*initialDurationPtr) * time.Second, KeepSegments: *keepSegmentsPtr}
 	rts := &rtmp.Server{Addr: ":1935",
 		HandlePublish: func(c *rtmp.Conn) {
 			defer c.Close()

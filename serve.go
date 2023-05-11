@@ -2,6 +2,7 @@ package hls
 
 import (
 	"bytes"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -14,19 +15,21 @@ import (
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// print full request info with time
-	//log.Println("ServeHTTP: " + req.Method + " " + req.URL.Path + " " + req.Proto + " " + req.RemoteAddr + " " + req.UserAgent())
+	log.Println("ServeHTTP: " + req.Method + " " + req.URL.Path)
 
 	//rw.Header().Set("Access-Control-Allow-Origin", "*")
 	//rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	state, ok := p.state.Load().(hlsState)
 	if !ok {
+		log.Println("ServeHTTP: state not ok")
 		http.NotFound(rw, req)
 		return
 	}
 	// filename is prefixed with track ID, or 'm' for main playlist
 	bn := path.Base(req.URL.Path)
 	if bn == "time" {
+		log.Println("ServeHTTP: time")
 		serveTime(rw)
 		return
 	}
@@ -47,6 +50,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	trackID := int(track - '0')
 	if trackID < 0 || trackID >= len(p.tracks) {
+		log.Println("ServeHTTP: trackID not ok")
 		http.NotFound(rw, req)
 		return
 	}
@@ -59,21 +63,25 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		// initialization segment
 		h := p.tracks[trackID].hdr
 		rw.Header().Set("Content-Type", h.HeaderContentType)
+		//log.Println("ServeHTTP: init segment")
 		http.ServeContent(rw, req, "", time.Time{}, bytes.NewReader(h.HeaderContents))
 		return
 	case ".m4s", ".ts":
 		// media segment
 		if !strings.HasPrefix(bn, p.pid) {
+			log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: pid not ok")
 			http.NotFound(rw, req)
 			return
 		}
 		bn = strings.TrimPrefix(bn, p.pid)
 		msn, ok := segment.ParseName(bn)
 		if !ok {
+			log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: msn not ok")
 			break
 		}
 		cursor, waitable := state.Get(msn.MSN, trackID)
 		if !waitable {
+			log.Println("ServeHTTP: not waitable")
 			// expired
 			break
 		} else if !cursor.Valid() {
@@ -84,6 +92,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				// only wait for the first part and then trickle out the rest
 				wait.Part = 0
 			}
+			log.Println("ServeHTTP: wait for segment")
 			state = p.waitForSegment(req.Context(), wait)
 			cursor, _ = state.Get(msn.MSN, trackID)
 		}
@@ -92,6 +101,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	log.Println("!!!!!!!!!!!!!!!!!!! ServeHTTP: not found")
 	http.NotFound(rw, req)
 	return
 }

@@ -3,6 +3,7 @@ package segment
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -40,16 +41,19 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 	var cc string
 	c.s.mu.Lock()
 	if part >= 0 {
+		log.Println("Serve part", part)
 		// serve a single fragment
 		r = c.s.readPartLocked(part)
 		cc = cachePart
 	} else {
 		// serve whole segment
 		if c.s.final {
+			log.Println("Serve whole segment")
 			// from file
 			r = c.s.f
 		} else {
 			// trickle fragments
+			log.Println("Serve whole segment (trickle)")
 			c.s.trickleLocked(rw, req)
 			return
 		}
@@ -57,6 +61,7 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 	}
 	c.s.mu.Unlock()
 	if r == nil {
+		log.Println("Serve: not found")
 		http.NotFound(rw, req)
 		return
 	}
@@ -67,6 +72,7 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 // get a reader for the complete part or segment
 func (s *Segment) readPartLocked(part int) io.ReadSeeker {
 	if part >= len(s.parts) {
+		log.Println("readPartLocked: part not found")
 		return nil
 	}
 	p := s.parts[part]
@@ -75,10 +81,13 @@ func (s *Segment) readPartLocked(part int) io.ReadSeeker {
 		offset += int64(pp.Length)
 	}
 	if p.Bytes != nil {
+		log.Println("readPartLocked: part found in memory ", len(p.Bytes), " bytes")
 		return bytes.NewReader(p.Bytes)
 	} else if s.f != nil {
+		log.Println("readPartLocked: part found in file")
 		return io.NewSectionReader(s.f, offset, int64(p.Length))
 	}
+	log.Println("readPartLocked: part not found 2")
 	return nil
 }
 
