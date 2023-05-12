@@ -3,6 +3,7 @@ package hls
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"time"
@@ -127,7 +128,7 @@ func (p *Publisher) formatTrackHeader(b *bytes.Buffer, trackID int, initialDur, 
 	}
 	if fragLen > 0 {
 		//fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:HOLD-BACK=%f,PART-HOLD-BACK=%f,CAN-BLOCK-RELOAD=YES\n", 1.5*initialDur.Seconds(), 2.1*fragLen.Seconds())
-		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=%f\n", 3*fragLen.Seconds())
+		fmt.Fprintf(b, "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=%f\n", 3.1*fragLen.Seconds())
 		fmt.Fprintf(b, "#EXT-X-PART-INF:PART-TARGET=%f\n", fragLen.Seconds())
 	}
 	if filename := p.tracks[trackID].hdr.HeaderName; filename != "" {
@@ -141,6 +142,7 @@ func (p *Publisher) servePlaylist(rw http.ResponseWriter, req *http.Request, sta
 		http.Error(rw, err.Error(), 400)
 		return
 	} else if want.MSN > state.complete.MSN+maxFutureMSN {
+		log.Println("requested MSN", want.MSN, "is too far in the future")
 		http.Error(rw, "_HLS_msn is in the distant future", 400)
 		return
 	}

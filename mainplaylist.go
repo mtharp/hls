@@ -3,6 +3,7 @@ package hls
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 func (p *Publisher) serveMainPlaylist(rw http.ResponseWriter, req *http.Request, state hlsState) {
 	if p.comboID >= 0 {
 		// serve combined playlist instead
+		log.Println("serveMainPlaylist: comboID ", p.comboID)
 		p.servePlaylist(rw, req, state, p.comboID)
 		return
 	}

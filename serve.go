@@ -14,11 +14,8 @@ import (
 // serve the HLS playlist and segments
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
-	// print full request info with time
-	log.Println("ServeHTTP: " + req.Method + " " + req.URL.Path)
-
-	//rw.Header().Set("Access-Control-Allow-Origin", "*")
-	//rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	// print full request info with query string
+	log.Println("ServeHTTP: " + req.Method + " " + req.URL.String())
 
 	state, ok := p.state.Load().(hlsState)
 	if !ok {
@@ -39,6 +36,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		switch path.Ext(bn) {
 		case ".m3u8":
 			// main playlist
+			log.Println("ServeHTTP: main playlist")
 			p.serveMainPlaylist(rw, req, state)
 		case ".mpd":
 			// DASH MPD
@@ -57,6 +55,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	switch path.Ext(bn) {
 	case ".m3u8":
 		// media playlist
+		log.Println("ServeHTTP: media playlist")
 		p.servePlaylist(rw, req, state, trackID)
 		return
 	case ".mp4":
