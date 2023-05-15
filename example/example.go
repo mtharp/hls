@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 func main() {
 
 	modePtr := flag.Int("mode", 0, "HLS Mode (0,1,2)")
-	fragLenPtr := flag.Int("fraglen", 1000, "HLS Fragment Length (ms)")
+	fragLenPtr := flag.Int("fraglen", 500, "HLS Fragment Length (ms)")
 	bufferLenPtr := flag.Int("bufferlen", 2, "HLS Buffer Length (sec)")
 	initialDurationPtr := flag.Int("initialduration", 2, "HLS Initial duration (sec)")
 	keepSegmentsPtr := flag.Int("keepsegments", 10, "HLS how many segments to keep")
@@ -51,6 +52,28 @@ func main() {
 		http.ServeContent(rw, req, "links.html", time.Time{}, r)
 	}))
 
+	log.Println("run ffmpeg")
+	cmd := exec.Command("ffmpeg",
+		"-threads", "2",
+		"-re",
+		"-fflags", "+genpts",
+		"-stream_loop", "-1",
+		"-i", "/home/den/encoded.mp4",
+		"-c", "copy",
+		//"-g", "100",
+		//"-c:a", "aac", "-b:a", "128k",
+		//"-b:v", "5M", "-c:v", "libx264", "-preset", "fast", "-tune", "zerolatency", "-profile:v", "high", "-level", "4.2",
+		//"-filter:a", "'volume=0.1'",
+		"-f", "flv",
+		"rtmp://127.0.0.1:1935/live",
+	)
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
+	go cmd.Run()
+	//if err != nil {
+	//	log.Fatalf("cmd.Run() failed with %s\n", err)
+	//}
+
 	eg.Go(func() error {
 		//return http.ListenAndServeTLS(":8080", "server.crt", "server.key", nil)
 		return http.ListenAndServe(":8080", nil)
@@ -59,6 +82,7 @@ func main() {
 	if err := eg.Wait(); err != nil {
 		log.Println("error:", err)
 	}
+	//ffmpeg -threads 2 -re -fflags +genpts -stream_loop -1 -i ./input.mov -c copy -f flv rtmp://127.0.0.1:1935/live
 }
 
 const links = `<!DOCTYPE html>
