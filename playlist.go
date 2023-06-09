@@ -86,7 +86,7 @@ func (p *Publisher) snapshot(initialDur time.Duration) {
 			}
 			includeParts := fragLen > 0 && i >= len(track.segments)-3
 			includePreloadHint := i == len(track.segments)-1
-			seg.Format(&b, includeParts, includePreloadHint)
+			seg.Format(&b, includeParts, includePreloadHint, p.Closed && i == len(track.segments)-1)
 		}
 		tracks[trackID] = trackSnapshot{
 			segments: cursors,

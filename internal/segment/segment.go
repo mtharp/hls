@@ -120,7 +120,7 @@ func (s *Segment) Release() {
 }
 
 // Format a playlist fragment for this segment
-func (s *Segment) Format(b *bytes.Buffer, includeParts bool, includePreloadHint bool) {
+func (s *Segment) Format(b *bytes.Buffer, includeParts bool, includePreloadHint bool, includeEndPlaylist bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.final && (!includeParts || len(s.parts) == 0) {
@@ -147,6 +147,9 @@ func (s *Segment) Format(b *bytes.Buffer, includeParts bool, includePreloadHint 
 	}
 	if s.final {
 		fmt.Fprintf(b, "#EXTINF:%f,\n%s%s\n", s.dur.Seconds(), s.base, s.suf)
+	}
+	if includeEndPlaylist {
+		b.WriteString("#EXT-X-ENDLIST\n")
 	}
 
 }
