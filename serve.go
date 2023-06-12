@@ -15,18 +15,18 @@ import (
 func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// print full request info with query string
-	log.Println("ServeHTTP: " + req.Method + " " + req.URL.String())
+	//log.Println("ServeHTTP: " + req.Method + " " + req.URL.String())
 
 	state, ok := p.state.Load().(hlsState)
 	if !ok {
-		log.Println("ServeHTTP: state not ok")
+		//log.Println("ServeHTTP: state not ok")
 		http.NotFound(rw, req)
 		return
 	}
 	// filename is prefixed with track ID, or 'm' for main playlist
 	bn := path.Base(req.URL.Path)
 	if bn == "time" {
-		log.Println("ServeHTTP: time")
+		//log.Println("ServeHTTP: time")
 		serveTime(rw)
 		return
 	}
@@ -36,7 +36,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		switch path.Ext(bn) {
 		case ".m3u8":
 			// main playlist
-			log.Println("ServeHTTP: main playlist")
+			//log.Println("ServeHTTP: main playlist")
 			p.serveMainPlaylist(rw, req, state)
 		case ".mpd":
 			// DASH MPD
@@ -48,14 +48,13 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	trackID := int(track - '0')
 	if trackID < 0 || trackID >= len(p.tracks) {
-		log.Println("ServeHTTP: trackID not ok")
 		http.NotFound(rw, req)
 		return
 	}
 	switch path.Ext(bn) {
 	case ".m3u8":
 		// media playlist
-		log.Println("ServeHTTP: media playlist")
+		//log.Println("ServeHTTP: media playlist")
 		p.servePlaylist(rw, req, state, trackID)
 		return
 	case ".mp4":
@@ -68,14 +67,14 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	case ".m4s", ".ts":
 		// media segment
 		if !strings.HasPrefix(bn, p.pid) {
-			log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: pid not ok")
+			//	log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: pid not ok")
 			http.NotFound(rw, req)
 			return
 		}
 		bn = strings.TrimPrefix(bn, p.pid)
 		msn, ok := segment.ParseName(bn)
 		if !ok {
-			log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: msn not ok")
+			//log.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!ServeHTTP: msn not ok")
 			break
 		}
 		cursor, waitable := state.Get(msn.MSN, trackID)
@@ -91,7 +90,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				// only wait for the first part and then trickle out the rest
 				wait.Part = 0
 			}
-			log.Println("ServeHTTP: wait for segment")
+			//log.Println("ServeHTTP: wait for segment")
 			state = p.waitForSegment(req.Context(), wait)
 			cursor, _ = state.Get(msn.MSN, trackID)
 		}
@@ -100,7 +99,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	log.Println("!!!!!!!!!!!!!!!!!!! ServeHTTP: not found")
+	//log.Println("!!!!!!!!!!!!!!!!!!! ServeHTTP: not found")
 	http.NotFound(rw, req)
 	return
 }

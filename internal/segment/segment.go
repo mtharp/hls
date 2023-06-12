@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -63,7 +62,7 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 // Append a complete fragment to the segment. The buffer must not be modified afterwards.
 func (s *Segment) Append(frag fragment.Fragment) error {
 	s.mu.Lock()
-	log.Println("---> append fragment", len(s.parts), "to segment", s.base)
+	//log.Println("---> append fragment", len(s.parts), "to segment", s.base)
 	s.parts = append(s.parts, frag)
 	s.size += int64(frag.Length)
 	s.mu.Unlock()
@@ -101,7 +100,7 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 	}
 	// discard individual part buffers. the size is retained so they can still
 	// be served from the finalized file.
-	log.Println("---> finalizing segment", s.base)
+	//log.Println("---> finalizing segment", s.base)
 	for i := range s.parts {
 		s.parts[i].Bytes = nil
 	}

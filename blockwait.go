@@ -19,7 +19,7 @@ type (
 
 // block until segment with the given number is ready or ctx is cancelled
 func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hlsState {
-	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, (p.InitialDuration+1)*time.Second)
 	defer cancel()
 	// subscribe to segment updates
 	ch := p.addSub()
@@ -29,6 +29,11 @@ func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hl
 		if !ok {
 			return hlsState{}
 		}
+
+		if p.Closed {
+			return state
+		}
+
 		if state.complete.Satisfies(want) {
 			return state
 		}

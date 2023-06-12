@@ -237,7 +237,9 @@ func (p *Publisher) MPD() string {
 
 // Close frees resources associated with the publisher
 func (p *Publisher) Close() {
+	log.Println("closing publisher", p.pid)
 	p.Closed = true
+	p.snapshot(0)
 	p.state.Store(hlsState{})
 	for _, track := range p.tracks {
 		for _, seg := range track.segments {
@@ -245,5 +247,7 @@ func (p *Publisher) Close() {
 		}
 		track.segments = nil
 	}
+	p.notifySegment()
 	os.RemoveAll(p.WorkDir)
+	log.Println("closed publisher", p.pid)
 }
