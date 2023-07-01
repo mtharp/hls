@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -23,7 +22,7 @@ type Segment struct {
 	programTime string
 	ctype       string
 	// modified while the segment is live
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	cond  sync.Cond
 	parts []fragment.Fragment
 	// set when the segment is finalized
@@ -46,12 +45,12 @@ func New(name, workDir, ctype string, start time.Duration, dcn bool, programTime
 		start: start,
 		dcn:   dcn,
 	}
-	s.cond.L = &s.mu
+	s.cond.L = s.mu.RLocker()
 	if !programTime.IsZero() {
 		s.programTime = programTime.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 	}
 	var err error
-	s.f, err = ioutil.TempFile(workDir, name)
+	s.f, err = os.CreateTemp(workDir, name)
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +116,8 @@ func (s *Segment) Release() {
 
 // Format a playlist fragment for this segment
 func (s *Segment) Format(b *bytes.Buffer, includeParts bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if !s.final && (!includeParts || len(s.parts) == 0) {
 		return
 	}

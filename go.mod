@@ -6,5 +6,5 @@ replace github.com/nareix/joy4 => eaglesong.dev/joy4 v0.0.0-20190831160920-56688
 
 require (
 	github.com/nareix/joy4 v0.0.0-00010101000000-000000000000
-	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/sync v0.3.0
 )

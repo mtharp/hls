@@ -38,7 +38,7 @@ func (s *Segment) setHeaders(rw http.ResponseWriter, cacheControl string) {
 func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 	var r io.ReadSeeker
 	var cc string
-	c.s.mu.Lock()
+	c.s.mu.RLock()
 	if part >= 0 {
 		// serve a single fragment
 		r = c.s.readPartLocked(part)
@@ -55,7 +55,7 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 		}
 		cc = cacheSegment
 	}
-	c.s.mu.Unlock()
+	c.s.mu.RUnlock()
 	if r == nil {
 		http.NotFound(rw, req)
 		return
@@ -93,13 +93,13 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 		var needFlush bool
 		for ; part < len(s.parts) && !s.final; part++ {
 			d := s.parts[part].Bytes
-			s.mu.Unlock()
+			s.mu.RUnlock()
 			if _, err := rw.Write(d); err != nil {
 				return
 			}
 			copied += int64(len(d))
 			needFlush = true
-			s.mu.Lock()
+			s.mu.RLock()
 		}
 		if s.final {
 			// byte buffers are cleared when the segment is finalized. break out
@@ -108,9 +108,9 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 		} else if needFlush && flusher != nil {
 			// flush the current buffer out, then check if more parts arrived
 			// while the lock was released.
-			s.mu.Unlock()
+			s.mu.RUnlock()
 			flusher.Flush()
-			s.mu.Lock()
+			s.mu.RLock()
 		} else {
 			// wait for more parts
 			s.cond.Wait()
@@ -119,11 +119,11 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 	remainder := s.size - copied
 	if remainder <= 0 || s.f == nil {
 		// complete
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return
 	}
 	// serve the remainder from file
 	r := io.NewSectionReader(s.f, copied, remainder)
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	io.Copy(rw, r)
 }

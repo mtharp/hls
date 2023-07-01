@@ -1,4 +1,4 @@
 eaglesong.dev/joy4 v0.0.0-20190831160920-566887487cc0 h1:J22w7EVBEYQSLb9VT3P80KR0SavuyT+Wj33w0qVtByM=
 eaglesong.dev/joy4 v0.0.0-20190831160920-566887487cc0/go.mod h1:5AtUanNpFc/x/7rXp3aygmJTKtqrIwKJbokHo+pkEtE=
-golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9 h1:SQFwaSi55rU7vdNs9Yr0Z324VNlrF+0wMqRXT4St8ck=
-golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sync v0.3.0 h1:ftCYgMx6zT/asHUrPw8BLLscYtGznsLAnjq5RH9P66E=
+golang.org/x/sync v0.3.0/go.mod h1:FU7BRWz2tNW+3quACPkgCx/L+uEAv1htQ0V83Z9Rj+Y=
