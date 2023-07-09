@@ -178,12 +178,14 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 	// enqueue packet to fragmenter
 	if p.Mode != ModeSingleTrack {
 		if t := p.tracks[pkt.Idx]; len(t.segments) != 0 {
+			//log.Println("WriteExtendedPacket1 WritePacket", pkt.Idx, pkt.Time, pkt.IsKeyFrame, len(pkt.Data))
 			if err := t.frag.WritePacket(pkt.Packet); err != nil {
 				return err
 			}
 		}
 	}
 	if p.Mode != ModeSeparateTracks && len(p.combo.segments) != 0 {
+		//log.Println("WriteExtendedPacket2 WritePacket", pkt.Idx, pkt.Time, pkt.IsKeyFrame, len(pkt.Data))
 		if err := p.combo.frag.WritePacket(pkt.Packet); err != nil {
 			return err
 		}
@@ -202,7 +204,22 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 		// this keyframe into the new segment.
 		pkt.ProgramTime = time.Now()
 		//log.Println("keyframe" + " " + pkt.Time.String() + " " + pkt.ProgramTime.String())
-		return p.newSegment(pkt.Time, pkt.ProgramTime)
+		// check if no segments added yet
+		if len(p.combo.segments) == 0 {
+			err := p.newSegment(pkt.Time, pkt.ProgramTime)
+			if err != nil {
+				return err
+			}
+			if p.Mode != ModeSeparateTracks && len(p.combo.segments) != 0 {
+				//log.Println("WriteExtendedPacket3 WritePacket", pkt.Idx, pkt.Time, pkt.IsKeyFrame, len(pkt.Data))
+				if err := p.combo.frag.WritePacket(pkt.Packet); err != nil {
+					return err
+				}
+			}
+			return nil
+		} else {
+			return p.newSegment(pkt.Time, pkt.ProgramTime)
+		}
 	} else if len(p.primary.segments) != 0 && p.primary.frag.Duration() >= fragLen-slopOffset {
 		// flush fragments periodically
 		if err := p.flush(); err != nil {

@@ -102,6 +102,8 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 	// be served from the finalized file.
 	//log.Println("---> finalizing segment", s.base)
 	for i := range s.parts {
+		//f_part, _ := os.Create(s.f.Name() + fmt.Sprintf(".%d", i))
+		//f_part.Write(s.parts[i].Bytes)
 		s.parts[i].Bytes = nil
 	}
 	s.mu.Unlock()
@@ -114,6 +116,7 @@ func (s *Segment) Release() {
 	s.size = 0
 	s.f.Close()
 	os.Remove(s.f.Name())
+	//log.Println("---> releasing segment", s.f.Name())
 	s.f = nil
 	s.mu.Unlock()
 }

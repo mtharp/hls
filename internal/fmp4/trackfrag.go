@@ -44,6 +44,7 @@ func NewTrack(codecData av.CodecData) (*TrackFragmenter, error) {
 
 // WritePacket appends a packet to the fragmenter
 func (f *TrackFragmenter) WritePacket(pkt av.Packet) error {
+	//log.Println("TrackFragmenter WritePacket", pkt.Idx, pkt.Time, pkt.IsKeyFrame, len(pkt.Data))
 	switch f.codecData.(type) {
 	case h264parser.CodecData:
 		// reformat NALUs as AVCC

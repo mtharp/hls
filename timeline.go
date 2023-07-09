@@ -28,6 +28,7 @@ func (p *Publisher) newSegment(start time.Duration, programTime time.Time) error
 	for trackID, track := range p.tracks {
 		track.frag.NewSegment()
 		name := fmt.Sprintf("%d%s%d%s", trackID, p.pid, nextMSN, track.hdr.SegmentExtension)
+		//name := fmt.Sprintf("%d%s%d%s", trackID, "dc", nextMSN, track.hdr.SegmentExtension)
 		seg, err := segment.New(name, p.WorkDir, track.hdr.SegmentContentType, start, p.nextDCN, programTime)
 		if err != nil {
 			return err
