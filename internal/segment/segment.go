@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -113,12 +114,29 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 // Release the backing storage associated with the segment
 func (s *Segment) Release() {
 	s.mu.Lock()
+	defer func(s *Segment) {
+		s.f = nil
+		s.mu.Unlock()
+	}(s)
+
+	if s.f == nil {
+		log.Println("segment file already removed")
+		return
+	}
+
 	s.size = 0
-	s.f.Close()
-	os.Remove(s.f.Name())
+
+	err := s.f.Close()
+	if err != nil {
+		return
+	}
+
+	errR := os.Remove(s.f.Name())
+	if errR != nil {
+		return
+	}
+
 	//log.Println("---> releasing segment", s.f.Name())
-	s.f = nil
-	s.mu.Unlock()
 }
 
 // Format a playlist fragment for this segment
