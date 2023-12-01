@@ -25,9 +25,10 @@ func (p *Publisher) waitForSegment(ctx context.Context, want segment.PartMSN) hl
 	ch := p.addSub()
 	defer p.delSub(ch)
 	for {
-		state, ok := p.state.Load().(hlsState)
-		if !ok {
-			return hlsState{}
+		state, _ := p.state.Load().(hlsState)
+		if !state.Valid() {
+			// publisher closed
+			return state
 		}
 		if state.complete.Satisfies(want) {
 			return state
@@ -107,8 +108,9 @@ func (p *Publisher) waitForEtag(req *http.Request, state hlsState) hlsState {
 	ch := p.addSub()
 	defer p.delSub(ch)
 	for {
-		state, ok := p.state.Load().(hlsState)
-		if !ok {
+		state, _ := p.state.Load().(hlsState)
+		if !state.Valid() {
+			// publisher closed
 			return state
 		}
 		if state.mpd.etag != previous {

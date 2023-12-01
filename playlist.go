@@ -27,9 +27,17 @@ type trackSnapshot struct {
 	playlist []byte
 }
 
+func (s *hlsState) Valid() bool {
+	return len(s.tracks) != 0
+}
+
 // Get a segment by MSN. Returns the zero value if it isn't available.
-func (s hlsState) Get(msn segment.MSN, trackID int) (c segment.Cursor, ok bool) {
-	if msn > s.complete.MSN+maxFutureMSN {
+func (s *hlsState) Get(msn segment.MSN, trackID int) (c segment.Cursor, ok bool) {
+	if !s.Valid() {
+		// publisher closed or invalid state
+		return segment.Cursor{}, false
+	}
+	if !s.Valid() || msn > s.complete.MSN+maxFutureMSN {
 		// too far in the future
 		return segment.Cursor{}, false
 	}

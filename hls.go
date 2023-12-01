@@ -55,6 +55,7 @@ type Publisher struct {
 	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
 	Prefetch bool
 
+	mu      sync.Mutex
 	pid     string // unique filename for this instance of the stream
 	streams []av.CodecData
 	tracks  []*track
@@ -93,6 +94,8 @@ func (p *Publisher) WriteHeader(streams []av.CodecData) error {
 	if len(streams) > 9 {
 		return errors.New("too many streams")
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.pid = strconv.FormatInt(time.Now().Unix(), 36)
 	p.streams = streams
 	p.comboID = -1
@@ -164,6 +167,8 @@ func (p *Publisher) WritePacket(pkt av.Packet) error {
 
 // WriteExtendedPacket publishes a packet with additional metadata
 func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	// enqueue packet to fragmenter
 	if p.Mode != ModeSingleTrack {
 		if t := p.tracks[pkt.Idx]; len(t.segments) != 0 {
@@ -202,6 +207,8 @@ func (p *Publisher) WriteExtendedPacket(pkt ExtendedPacket) error {
 
 // Discontinuity inserts a marker into the playlist before the next segment indicating that the decoder should be reset
 func (p *Publisher) Discontinuity() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.nextDCN = true
 }
 
@@ -223,6 +230,8 @@ func (p *Publisher) MPD() string {
 
 // Close frees resources associated with the publisher
 func (p *Publisher) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.state.Store(hlsState{})
 	for _, track := range p.tracks {
 		for _, seg := range track.segments {
@@ -230,4 +239,5 @@ func (p *Publisher) Close() {
 		}
 		track.segments = nil
 	}
+	p.notifySegment()
 }

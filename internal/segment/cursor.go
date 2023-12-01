@@ -101,7 +101,10 @@ func (s *Segment) trickleLocked(rw http.ResponseWriter, req *http.Request) {
 			needFlush = true
 			s.mu.RLock()
 		}
-		if s.final {
+		if s.f == nil {
+			// released
+			return
+		} else if s.final {
 			// byte buffers are cleared when the segment is finalized. break out
 			// and copy the rest from file.
 			break

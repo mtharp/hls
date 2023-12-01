@@ -63,9 +63,10 @@ func (s *Segment) Append(frag fragment.Fragment) error {
 	s.mu.Lock()
 	s.parts = append(s.parts, frag)
 	s.size += int64(frag.Length)
+	f := s.f
 	s.mu.Unlock()
 	s.cond.Broadcast()
-	_, err := s.f.Write(frag.Bytes)
+	_, err := f.Write(frag.Bytes)
 	return err
 }
 
@@ -108,10 +109,12 @@ func (s *Segment) Finalize(nextSegment time.Duration) {
 // Release the backing storage associated with the segment
 func (s *Segment) Release() {
 	s.mu.Lock()
+	s.parts = nil
 	s.size = 0
 	s.f.Close()
 	s.f = nil
 	s.mu.Unlock()
+	s.cond.Broadcast()
 }
 
 // Format a playlist fragment for this segment
