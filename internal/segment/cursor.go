@@ -35,7 +35,7 @@ func (s *Segment) setHeaders(rw http.ResponseWriter, cacheControl string) {
 // Serve the segment to a client.
 //
 // If part < 0 then the whole segment is served, otherwise just the indicated part is.
-func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
+func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int, dataOnly bool) bool {
 	var r io.ReadSeeker
 	var cc string
 	c.s.mu.RLock()
@@ -51,17 +51,24 @@ func (c *Cursor) Serve(rw http.ResponseWriter, req *http.Request, part int) {
 		} else {
 			// trickle fragments
 			c.s.trickleLocked(rw, req)
-			return
+			return true
 		}
 		cc = cacheSegment
 	}
 	c.s.mu.RUnlock()
 	if r == nil {
-		http.NotFound(rw, req)
-		return
+		if !dataOnly {
+			http.NotFound(rw, req)
+		}
+		return false
 	}
-	c.s.setHeaders(rw, cc)
-	http.ServeContent(rw, req, "", time.Time{}, r)
+	if dataOnly {
+		io.Copy(rw, r)
+	} else {
+		c.s.setHeaders(rw, cc)
+		http.ServeContent(rw, req, "", time.Time{}, r)
+	}
+	return true
 }
 
 // get a reader for the complete part or segment

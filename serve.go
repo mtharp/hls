@@ -81,7 +81,7 @@ func (p *Publisher) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			cursor, _ = state.Get(msn.MSN, trackID)
 		}
 		if cursor.Valid() {
-			cursor.Serve(rw, req, msn.Part)
+			cursor.Serve(rw, req, msn.Part, false)
 			return
 		}
 	}
