@@ -34,7 +34,9 @@ func (p *Publisher) serveMainPlaylist(rw http.ResponseWriter, req *http.Request,
 }
 
 func (p *Publisher) serveDASH(rw http.ResponseWriter, req *http.Request, state hlsState) {
-	state = p.waitForEtag(req, state)
+	if p.BlockMPD {
+		state = p.waitForEtag(req, state)
+	}
 	if len(state.mpd.value) == 0 {
 		http.NotFound(rw, req)
 		return

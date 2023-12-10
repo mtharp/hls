@@ -48,12 +48,14 @@ type Publisher struct {
 	InitialDuration time.Duration
 	// BufferLength is the approximate duration spanned by all the segments in the playlist. Old segments are removed until the playlist length is less than this value.
 	BufferLength time.Duration
-	// FragmentLength is the size of MP4 fragments to break each segment into. Defaults to 500ms.
+	// FragmentLength is the size of MP4 fragments to break each segment into. Defaults to 200ms.
 	FragmentLength time.Duration
 	// WorkDir is a temporary storage location for segments. Can be empty, in which case the default system temp dir is used.
 	WorkDir string
 	// Prefetch reveals upcoming segments before they begin so the client can initiate the download early
 	Prefetch bool
+	// BlockMPD causes conditional DASH playlist fetches to block until an updated version is ready
+	BlockMPD bool
 
 	mu      sync.Mutex
 	pid     string // unique filename for this instance of the stream
